@@ -6,7 +6,7 @@ import numpy as np
 
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT' ]  #, 'BOMB']
-STATE_FEATURES = 52 
+STATE_FEATURES = 53 
 
 def setup(self):
     """
@@ -23,11 +23,20 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.target = None
-    if self.train or not os.path.isfile("my-saved-model.pt"):
+    
+    if self.train and not os.path.isfile("my-saved-model_v2.pt"):
+        print("First round")
         self.logger.info("Setting up model from scratch.")
-       
+        self.first_training_round = True
         self.model = np.zeros((STATE_FEATURES,len(ACTIONS)))
+    elif self.train and os.path.isfile("my-saved-model_v2.pt"):
+        print("second round")
+        self.logger.info("Loading model from saved state.")
+        self.first_training_round = False
+        with open("my-saved-model.pt", "rb") as file:
+            self.model = pickle.load(file)
     else:
+        self.first_training_round = False
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
@@ -45,9 +54,8 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     #best_step = find_coin(self, game_state)
     
-
     random_prob = .1
-    if self.train and random.random() < random_prob:
+    if self.first_training_round is True and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
         return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .2])
@@ -82,10 +90,10 @@ def find_coin(self, game_state: dict): #Function which finds nearest coin and de
     self.target = np.array(coins[min_distance]) #Setting coordinates of coin/target
         
    # array of possible movements - free tiles :UP - RIGHT - DOWN - LEFT
-    neighbour_tiles = np.array([[x, y+1] if field[x,y+1]==0 else [1000,1000], 
+    neighbour_tiles = np.array([[x, y +1] if field[x,y+1]==0 else [1000,1000], 
                                 [x +1, y] if field[x+1,y]==0 else [1000,1000], 
                                 [x, y -1] if field[x, y-1]==0 else [1000,1000],
-                                [x-1, y] if field[x-1,y]==0 else [1000,1000]])
+                                [x- 1, y] if field[x-1,y]==0 else [1000,1000]])
    
     new_pos = np.argmin(np.sum(np.abs(neighbour_tiles - self.target),axis=1))
     #new_pos = possible_steps[new_pos]
