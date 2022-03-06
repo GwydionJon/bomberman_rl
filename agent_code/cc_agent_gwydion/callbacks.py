@@ -1,12 +1,12 @@
 import os
 import pickle
 import random
-
+import json
 import numpy as np
 
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT"]  # , 'BOMB']
-STATE_FEATURES = 53
+STATE_FEATURES = 2
 
 
 def setup(self):
@@ -23,15 +23,34 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
+
+    # target stores the current target coin
     self.target = None
+    # trace is a list of all decisions
+    self.trace = []
+    # stores the distance to the target
+    self.distance_trace = []
+
+    # to check if the number of coins has changed.
+    self.last_coin_number = 0
+
     if self.train or not os.path.isfile("my-saved-model.pt"):
         self.logger.info("Setting up model from scratch.")
-
+        print("create new model in callbacks")
         self.model = np.zeros((STATE_FEATURES, len(ACTIONS)))
+        # feature dict stores different feature combinations and maps them to our model.
+        self.feature_dict = {}
+
     else:
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
+
+        print(self.model)
+        print(self.model.shape)
+
+        with open("model_dict.json", "r") as f:
+            self.feature_dict = json.load(f)
 
 
 def act(self, game_state: dict) -> str:
@@ -46,7 +65,7 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     # best_step = find_coin(self, game_state)
 
-    random_prob = 0.1
+    random_prob = 0.2
     if self.train and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
@@ -54,39 +73,47 @@ def act(self, game_state: dict) -> str:
     else:
         self.logger.debug("Querying model for action.")
 
-        return ACTIONS[
-            np.argmax(self.model[feature_index(state_to_features(self, game_state)), :])
-        ]
+        try:
+            self.trace.append(
+                np.argmax(
+                    self.model[
+                        feature_index(self, state_to_features(self, game_state)), :
+                    ]
+                )
+            )
+            return ACTIONS[self.trace[-1]]
+        except:
+            return np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.2])
 
 
 def find_coin(
-    self, game_state: dict
+    self,
+    game_state: dict,
 ):  # Function which finds nearest coin and decides then where to go
     _, score, bool_bomb, (x, y) = game_state["self"]
     current = np.array([x, y])  # Curent position of agent
     coins = game_state["coins"]  # Position of visible coins
     if len(coins) == 0:
         action = np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.2])
+        self.distance_trace.append(-1)
         return ACTIONS.index(action)
-    # free_tiles = game_state['field'].T == 0 # Free tiles on field
-    # Board = np.indices((17,17)).transpose((1,2,0))
-    # free_tiles = Board[free_tiles]
-    field = game_state["field"].T
-    # Finding minimum distance to a coin
 
-    #  self.last_coin_number = len(coins)
+    # if the number of coins has changed we need to choose a new target
+    if self.last_coin_number != len(coins):
+        self.target = None
+    self.last_coin_number = len(coins)
 
-    # print(self.target)
-    # if self.last_coin_number != len(coins):
-    #   print("set target none")
-    #  self.target == None
-
-    # choose target
-    # if self.target is None:
+    # calculate nearest target
     min_distance = np.argmin(np.sum(np.abs(coins - current), axis=1))
-    self.target = np.array(coins[min_distance])  # Setting coordinates of coin/target
+    # choose target
+    if self.target is None:
+        self.target = np.array(
+            coins[min_distance]
+        )  # Setting coordinates of coin/target
 
     # array of possible movements - free tiles :UP - RIGHT - DOWN - LEFT
+    field = game_state["field"].T
+
     neighbour_tiles = np.array(
         [
             [x, y + 1] if field[x, y + 1] == 0 else [1000, 1000],
@@ -97,7 +124,18 @@ def find_coin(
     )
 
     new_pos = np.argmin(np.sum(np.abs(neighbour_tiles - self.target), axis=1))
-    # new_pos = possible_steps[new_pos]
+
+    int_distance = int(min_distance / 10)
+    self.distance_value = 1
+    if int_distance <= 1:
+        self.distance_trace.append(0)
+    if int_distance <= 2:
+        self.distance_trace.append(1)
+    elif int_distance <= 4:
+        self.distance_trace.append(2)
+    else:
+        self.distance_trace.append(3)
+
     return new_pos  # new acceptable position -> go there
 
 
@@ -116,11 +154,13 @@ def state_to_features(self, game_state: dict) -> np.array:
     :return: np.array
     """
     # This is the dict before the game begins and after it ends
+
     if game_state is None:
         return None
 
     _, score, bool_bomb, (x, y) = game_state["self"]
     coin_target = find_coin(self, game_state)
+
     field = game_state["field"].T
     # check in which directions walls are: UP-RIGHT-DOWN-LEFT
     find_walls = [
@@ -129,15 +169,17 @@ def state_to_features(self, game_state: dict) -> np.array:
         1 if field[x, y - 1] == -1 else 0,
         1 if field[x - 1, y] == -1 else 0,
     ]
-    features = np.array(find_walls + [coin_target])
-    return features
+
+    # add the last step as feature only when previous steps exist.
+    if len(self.trace) > 2:
+        previous_step = self.trace[-1]
+    else:
+        previous_step = 0
+    features = np.array(find_walls + [coin_target, self.distance_value, previous_step])
+
+    return str(features)
 
 
-def feature_index(features):
-    return (
-        2**3 * 4 * features[0]
-        + 2**2 * 4 * features[1]
-        + 2 * 4 * features[2]
-        + 4 * features[3]
-        + features[4]
-    )
+def feature_index(self, features):
+    self.feature_dict.setdefault(features, len(self.feature_dict))
+    return self.feature_dict[features]

@@ -7,23 +7,15 @@ import events as e
 from .callbacks import state_to_features, feature_index
 import random as random
 import numpy as np
-
-# This is only an example!
-Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
+import json
 
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT"]  # , 'BOMB']
-STATE_FEATURES = 53
-
-# Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 3  # keep only ... last transitions
-RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
-
-# Events
-PLACEHOLDER_EVENT = "PLACEHOLDER"
+STATE_FEATURES = 2
 
 
 def create_model(self):
+    print("create model in train.py")
     q_table = np.zeros(
         (STATE_FEATURES, len(ACTIONS))
     )  # features times number of actions
@@ -38,10 +30,8 @@ def setup_training(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
     self.model = create_model(self)  # =q_table
-    self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
     self.trace = []
 
 
@@ -78,8 +68,18 @@ def game_events_occurred(
     if self_action is None or old_game_state is None or new_game_state is None:
         return
 
-    old_index = feature_index(state_to_features(self, old_game_state))
-    new_index = feature_index(state_to_features(self, new_game_state))
+    old_index = feature_index(self, state_to_features(self, old_game_state))
+
+    # print(len(self.model) , len(self.feature_dict))
+    while len(self.model) <= len(self.feature_dict):
+
+        self.model = np.vstack([self.model, np.zeros(len(ACTIONS))])
+
+        # self.feature_dict[new_hash] = len(self.feature_dict)
+
+        # self.model.append(np.zeros(len(ACTIONS)))
+
+    new_index = feature_index(self, state_to_features(self, new_game_state))
 
     alpha = 0.1
     gamma = 0.5
@@ -87,29 +87,14 @@ def game_events_occurred(
     reward = reward_from_events(self, events)
     old_val = self.model[old_index, ACTIONS.index(self_action)]
 
-    if new_index > 51:
-        print(new_index)
-        print(self.model.shape)
-        print(self.model)
     new_val = old_val + alpha * (
         reward + gamma * np.max(self.model[new_index]) - old_val
     )
 
     self.model[old_index, ACTIONS.index(self_action)] = new_val
 
-    # state_to_features is defined in callbacks.py
-    self.transitions.append(
-        Transition(
-            state_to_features(self, old_game_state),
-            self_action,
-            state_to_features(self, new_game_state),
-            reward_from_events(self, events),
-        )
-    )
-
     _, score, bool_bomb, (x, y) = new_game_state["self"]
-    self.trace.append([x, y])
-    # print("new game event")
+    # self.trace.append([x,y])
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -128,16 +113,12 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.logger.debug(
         f'Encountered event(s) {", ".join(map(repr, events))} in final step'
     )
-    self.transitions.append(
-        Transition(
-            state_to_features(self, last_game_state),
-            last_action,
-            None,
-            reward_from_events(self, events),
-        )
-    )
     # print(self.model)
     # Store the model
+
+    with open("model_dict.json", "w") as fp:
+        json.dump(self.feature_dict, fp)
+
     with open("my-saved-model.pt", "wb") as file:
         pickle.dump(self.model, file)
 
@@ -159,17 +140,10 @@ def reward_from_events(self, events: List[str]) -> int:
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
-    # if len(self.trace) >10:
-    #  if self.trace[-1] == self.trace[-3]:
-    #      reward_sum += -1
-    #  elif self.trace[-1]==self.trace[-5]:
-    #      reward_sum += -0.5
-    # if np.linalg.norm(self.trace[-1] -self.target) < np.linalg.norm(self.trace[-2] - self.target):
-    #     print("distance rduced")
-    #      reward_sum += 2
-    #   else:
-    #       reward_sum += -5
-    # print(reward_sum)
-    # print(self.trace)
+    if len(self.distance_trace) > 3:
+        # reward getting closer to the target coin
+        if self.distance_trace[-1] < self.distance_trace[-2]:
+            reward_sum += 1
+
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     return reward_sum
