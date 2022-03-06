@@ -1,1 +1,1 @@
-python main.py play --agent cc_agent_gwydion --scenario coin-heaven
+python main.py play --agent cc_agent_tensorflow --scenario coin-heaven
