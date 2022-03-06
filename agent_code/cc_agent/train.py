@@ -41,6 +41,7 @@ def setup_training(self):
     # (s, a, r, s')
     self.model = create_model(self) # =q_table
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    self.trace = [] 
     
 
 
@@ -69,8 +70,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     if self_action is None or old_game_state is None or new_game_state is None:
         return
     
-    old_index = feature_index(state_to_features(old_game_state))
-    new_index = feature_index(state_to_features(new_game_state))
+    old_index = feature_index(state_to_features(self,old_game_state))
+    new_index = feature_index(state_to_features(self, new_game_state))
 
     alpha= 0.1
     gamma= 0.5
@@ -80,10 +81,13 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     new_val = old_val + alpha*(reward + gamma*np.max(self.model[new_index]) - old_val)
     
     self.model[old_index,ACTIONS.index(self_action)] = new_val
-  
+    
     # state_to_features is defined in callbacks.py
-    self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
+    self.transitions.append(Transition(state_to_features(self, old_game_state), self_action, state_to_features(self,new_game_state), reward_from_events(self, events)))
 
+    _, score, bool_bomb, (x, y) = new_game_state['self']
+    self.trace.append([x,y])
+    #print("new game event")
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
@@ -99,7 +103,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    self.transitions.append(Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
+    self.transitions.append(Transition(state_to_features(self, last_game_state), last_action, None, reward_from_events(self, events)))
     #print(self.model)
     # Store the model
     with open("my-saved-model.pt", "wb") as file:
@@ -116,12 +120,24 @@ def reward_from_events(self, events: List[str]) -> int:
     game_rewards = {
         e.COIN_COLLECTED: 1,
         e.KILLED_OPPONENT: 5,
-        e.WAITED: -0.5 ,
-        e.INVALID_ACTION: -1
+        e.WAITED: -0.3 ,
+        e.INVALID_ACTION: -10
     }
     reward_sum = 0
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
+    #if len(self.trace) >10:
+      #  if self.trace[-1] == self.trace[-3]:
+      #      reward_sum += -1
+      #  elif self.trace[-1]==self.trace[-5]:
+      #      reward_sum += -0.5
+       # if np.linalg.norm(self.trace[-1] -self.target) < np.linalg.norm(self.trace[-2] - self.target):
+       #     print("distance rduced")
+      #      reward_sum += 2
+     #   else:
+     #       reward_sum += -5
+    #print(reward_sum)
+    #print(self.trace)
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     return reward_sum
