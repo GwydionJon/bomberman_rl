@@ -40,9 +40,13 @@ def setup_training(self):
     """
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
-    self.model = create_model(self)  # =q_table
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
     self.trace = []
+    if self.first_training_round is True:
+        self.model = create_model(self)  # =q_table
+    else:
+        with open("my-saved-model.pt", "rb") as file:
+            self.model = pickle.load(file)
 
 
 def game_events_occurred(
@@ -138,7 +142,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     )
     # print(self.model)
     # Store the model
-    with open("my-saved-model.pt", "wb") as file:
+    with open("my-saved-model_v2.pt", "wb") as file:
         pickle.dump(self.model, file)
 
 

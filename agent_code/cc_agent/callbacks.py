@@ -24,11 +24,20 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.target = None
-    if self.train or not os.path.isfile("my-saved-model.pt"):
-        self.logger.info("Setting up model from scratch.")
 
+    if self.train and not os.path.isfile("my-saved-model_v2.pt"):
+        print("First round")
+        self.logger.info("Setting up model from scratch.")
+        self.first_training_round = True
         self.model = np.zeros((STATE_FEATURES, len(ACTIONS)))
+    elif self.train and os.path.isfile("my-saved-model_v2.pt"):
+        print("second round")
+        self.logger.info("Loading model from saved state.")
+        self.first_training_round = False
+        with open("my-saved-model.pt", "rb") as file:
+            self.model = pickle.load(file)
     else:
+        self.first_training_round = False
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
@@ -47,7 +56,7 @@ def act(self, game_state: dict) -> str:
     # best_step = find_coin(self, game_state)
 
     random_prob = 0.1
-    if self.train and random.random() < random_prob:
+    if self.first_training_round is True and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
         return np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.2])
