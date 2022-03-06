@@ -1,0 +1,1 @@
+python main.py play --agent cc_agent --scenario coin-heaven
