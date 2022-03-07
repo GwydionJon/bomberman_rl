@@ -6,7 +6,7 @@ from this import d
 import numpy as np
 
 
-ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT"]  # , 'BOMB']
+ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
 STATE_FEATURES = 2
 
 
@@ -27,11 +27,11 @@ def setup(self):
 
     # target stores the current target coin
     self.target = None
-    # trace is a list of all decisions
-    self.trace = []
-    # stores the distance to the target
-    self.distance_trace = []
 
+    # stores the distance to the target
+    self.trace = []
+    self.distance_trace = []
+    self.bomb_trace = []
     # to check if the number of coins has changed.
     self.last_coin_number = 0
 
@@ -71,11 +71,13 @@ def act(self, game_state: dict) -> str:
     # best_step = find_coin(self, game_state)
 
     random_prob = 0.25
+    p = 1 / 6
     if self.train and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
-        random_action = np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.2])
 
+        random_action = np.random.choice(ACTIONS, p=[p, p, p, p, p, p])
+        self.trace.append(ACTIONS.index(random_action))
         return random_action
     else:
         self.logger.debug("Querying model for action.")
@@ -85,10 +87,18 @@ def act(self, game_state: dict) -> str:
             decision = np.argmax(
                 self.model[feature_index(self, state_to_features(self, game_state)), :]
             )
+
+            self.trace.append(decision)
+
+            self.logger.debug("Model Decision: " + ACTIONS[decision])
             return ACTIONS[decision]
+
         except:
             print("exept")
-            return np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.2])
+            random_action = np.random.choice(ACTIONS, p=[p, p, p, p, p, p])
+
+            self.trace.append(ACTIONS.index(random_action))
+            return random_action
 
 
 def find_coin(
@@ -98,11 +108,14 @@ def find_coin(
     _, score, bool_bomb, (x, y) = game_state["self"]
     current = np.array([x, y])  # Curent position of agent
     coins = game_state["coins"]  # Position of visible coins
-    if len(coins) == 0:
-        action = np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.2])
-        self.distance_trace.append(-1)
-        return ACTIONS.index(action)
 
+    if len(coins) == 0:
+        p = 1 / 6
+        action = np.random.choice(ACTIONS, p=[p, p, p, p, p, p])
+        self.distance_trace.append(-1)
+        self.stuck = 1
+        return ACTIONS.index(action)
+    self.stuck = 0
     # if the number of coins has changed we need to choose a new target
     if self.last_coin_number != len(coins):
         self.target = None
@@ -143,6 +156,41 @@ def find_coin(
     return new_pos  # new acceptable position -> go there
 
 
+def find_objects(self, object_coordinates, current_pos, field):
+    x, y = current_pos
+    if object_coordinates == []:
+        return 0, 0
+    min_distance_ind = np.argmin(
+        np.sum(np.abs(np.asarray(object_coordinates) - np.asarray(current_pos)), axis=1)
+    )
+    object_coord = object_coordinates[min_distance_ind]
+
+    distance = np.sum(
+        np.abs(np.asarray(object_coord) - np.asarray(current_pos)), axis=0
+    )
+    neighbour_tiles = np.array(
+        [
+            [x, y + 1] if field[x, y + 1] == 0 else [1000, 1000],
+            [x + 1, y] if field[x + 1, y] == 0 else [1000, 1000],
+            [x, y - 1] if field[x, y - 1] == 0 else [1000, 1000],
+            [x - 1, y] if field[x - 1, y] == 0 else [1000, 1000],
+        ]
+    )
+
+    direction = np.argmin(np.sum(np.abs(neighbour_tiles - object_coord), axis=1))
+
+    if distance <= 1:
+        distance_value = 4
+    elif distance <= 2:
+        distance_value = 3
+    elif distance <= 4:
+        distance_value = 2
+    else:
+        distance_value = 1
+
+    return distance_value, direction
+
+
 def state_to_features(self, game_state: dict) -> np.array:
     """
     *This is not a required function, but an idea to structure your code.*
@@ -162,26 +210,74 @@ def state_to_features(self, game_state: dict) -> np.array:
     if game_state is None:
         return None
 
-    _, score, bool_bomb, (x, y) = game_state["self"]
-    coin_target = find_coin(self, game_state)
-
+    _, score, self.bool_bomb, (x, y) = game_state["self"]
     field = game_state["field"].T
     # check in which directions walls are: UP-RIGHT-DOWN-LEFT
-    find_walls = [
-        1 if field[x, y + 1] == -1 else 0,
-        1 if field[x + 1, y] == -1 else 0,
-        1 if field[x, y - 1] == -1 else 0,
-        1 if field[x - 1, y] == -1 else 0,
+
+    surroundings = [
+        field[x, y + 1],
+        field[x + 1, y],
+        field[x, y - 1],
+        field[x - 1, y],
     ]
 
-    moved_closer = 0
+    if self.trace[-1] == 5:
+        self.dropped_bomb = 1
+    else:
+        self.dropped_bomb = 0
 
-    if len(self.trace) > 5:
-        if self.trace[-1] == self.trace[-3]:
-            moved_closer = 1
+    # is box adjecant:
+    self.next_to_box = 0
+    if 1 in surroundings:
+        self.next_to_box = 1
+
+    # find coin target
+    coin_distance, coin_direction = find_objects(
+        self,
+        game_state["coins"],
+        (
+            x,
+            y,
+        ),
+        field,
+    )
+    self.distance_trace.append(coin_distance)
+    if len(self.distance_trace) > 2:
+        # the closer the higher the value
+        moved_to_coin = self.distance_trace[-2] < self.distance_trace[-1]
+    else:
+        moved_to_coin = 0
+
+    # find bomb danger
+    bombs_coordinates = [(x, y) for ((x, y), t) in game_state["bombs"]]
+    bomb_distance, bomb_direction = find_objects(
+        self,
+        bombs_coordinates,
+        (
+            x,
+            y,
+        ),
+        field,
+    )
+
+    self.bomb_trace.append(bomb_distance)
+    if len(self.bomb_trace) > 2:
+        # the closer the higher the value
+
+        moved_away = self.bomb_trace[-2] > self.bomb_trace[-1]
+    else:
+        moved_away = 0
 
     features = np.array(
-        find_walls + [coin_target, self.distance_trace[-1], self.distance_trace[-2]]
+        surroundings
+        + [
+            moved_to_coin,
+            coin_direction,
+            moved_away,
+            bomb_direction,
+            self.bool_bomb,
+            self.trace[-2],
+        ]
     )
 
     return str(features)

@@ -10,7 +10,7 @@ import numpy as np
 import json
 
 
-ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT"]  # , 'BOMB']
+ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
 STATE_FEATURES = 2
 
 
@@ -31,7 +31,7 @@ def setup_training(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     # (s, a, r, s')
-    self.trace = []
+
     if self.first_training_round is True:
         self.model = create_model(self)  # =q_table
     else:
@@ -133,19 +133,60 @@ def reward_from_events(self, events: List[str]) -> int:
     game_rewards = {
         e.COIN_COLLECTED: 1,
         e.KILLED_OPPONENT: 5,
-        e.WAITED: -0.3,
+        e.WAITED: -2.3,
         e.INVALID_ACTION: -10,
+        e.CRATE_DESTROYED: 0.3,
+        e.KILLED_SELF: -5,
     }
     reward_sum = 0
+    reward_events = []
+
     for event in events:
         if event in game_rewards:
+            reward_events.append(event)
             reward_sum += game_rewards[event]
-    if len(self.distance_trace) > 6:
-        # reward getting closer to the target coin
-        if self.distance_trace[-1] < self.distance_trace[-2]:
-            reward_sum += 0.3
-        if self.trace[-1] == self.distance_trace[-3]:
-            reward_sum += -0.6
 
-    self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
+    # current features
+    # surrounding space -> if box and bomb dropped: reward
+    # coin_dist_reduced -> reward
+    # bomb_dist_increase -> reward
+    # bool bomb and bomb dropped -> penalty
+
+    # encurage blowing up crates
+    if self.next_to_box and self.dropped_bomb:
+        reward_sum += 0.6
+        reward_events.append("Bomb next to Crate")
+    # encurage running towards coin
+    if len(self.distance_trace) > 2:
+        # the closer the higher the value
+        if self.distance_trace[-2] < self.distance_trace[-1]:
+            reward_sum += 0.6
+            reward_events.append("towards coin")
+
+        elif self.distance_trace[-2] > self.distance_trace[-1]:
+            reward_sum += -0.6
+            reward_events.append("away from coin")
+
+    # encurage running away from bomb
+    if len(self.bomb_trace) > 2:
+        # the closer the higher the value
+        if self.bomb_trace[-2] < self.bomb_trace[-1]:
+            reward_sum += -1
+            reward_events.append("towards bomb")
+
+        elif self.bomb_trace[-2] > self.bomb_trace[-1]:
+            reward_sum += 1
+            reward_events.append("away from bomb")
+
+    # punish bomb dropping when no bomb available
+    if e.BOMB_DROPPED and not self.bool_bomb:
+        reward_sum += -1
+        reward_events.append("no bomb available")
+
+    if not any(x in (self.trace[-1], self.trace[-2]) for x in [4, 5]):
+        if self.trace[-1] == self.trace[-2] + 2 or self.trace[-1] == self.trace[-2] - 2:
+            reward_sum += -1
+            reward_events.append("run in circles")
+
+    self.logger.info(f"Awarded {reward_sum} for events {', '.join(reward_events)}")
     return reward_sum

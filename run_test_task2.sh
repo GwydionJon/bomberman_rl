@@ -1,0 +1,1 @@
+python main.py play --agent cc_agent_gwydion_task2 --scenario coin-heaven
