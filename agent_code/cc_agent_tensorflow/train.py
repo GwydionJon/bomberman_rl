@@ -10,7 +10,7 @@ import numpy as np
 import json
 import tensorflow as tf
 from tensorflow.keras import Model, Sequential
-from tensorflow.keras.layers import Dense, Embedding, Reshape, Flatten
+from tensorflow.keras.layers import Dense, Embedding, Reshape, Flatten, InputLayer
 from tensorflow.keras.optimizers import Adam
 import pandas as pd
 
@@ -22,8 +22,7 @@ batch_size = 40
 def create_model(self):
 
     model = Sequential()
-    model.add(Dense(STATE_FEATURES, activation="relu"))
-
+    model.add(InputLayer(input_shape=(7)))
     model.add(Dense(50, activation="relu"))
     model.add(Dense(50, activation="relu"))
     model.add(Dense(15, activation="relu"))
@@ -31,8 +30,9 @@ def create_model(self):
     model.add(Dense(len(ACTIONS), activation="linear"))
 
     model.compile(loss="mse", optimizer=Adam())
-    model.build(input_shape=(STATE_FEATURES, 1))
+    model.build()
     print("done")
+    # model.fit([[0,0,0,0,0,0,0]],[[0,0,0,0,0]])
     return model
 
 
@@ -122,22 +122,23 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     reward = reward_from_events(self, events)
 
     train_models(self)
+    self.model.save("tensorflow_model")
 
 
 def train_models(self):
     # parameters
     gamma = 0.1
 
-    print(self.history["new_features"][0])
     old_features, actions, rewards, new_features = self.history.values()
 
-    for i in range(len(old_features)):
-        target = np.mean(self.model.predict(old_features[i]), axis=0)
-        target_future = np.mean(self.future_target.predict(new_features[i]), axis=0)
-        print(target, actions[i], rewards[i], np.amax(target_future))
-        target[actions[i]] = rewards[i] + gamma * np.amax(target_future)
+    # for i in range(len(old_features)):
+    target = self.model.predict(old_features.reshape(-1, 7))
+    target_future = self.future_target.predict(new_features.reshape(-1, 7))
 
-        self.model.fit(old_features[i], target, epochs=1, verbose=0)
+    target[:, actions] = rewards + gamma * np.amax(target_future, axis=1)
+    self.model.fit(
+        old_features.reshape(-1, 7), target.reshape(-1, 5), epochs=1, verbose=0
+    )
 
 
 def reward_from_events(self, events: List[str]) -> int:

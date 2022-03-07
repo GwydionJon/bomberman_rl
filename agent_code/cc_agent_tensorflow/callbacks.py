@@ -6,10 +6,11 @@ import numpy as np
 from tensorflow.keras import Model, Sequential
 from tensorflow.keras.layers import Dense, Embedding, Reshape
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.models import load_model
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT"]  # , 'BOMB']
 STATE_FEATURES = 2
-model_path = "my-saved-model.pt"
+model_path = "tensorflow_model"
 
 
 def setup(self):
@@ -36,19 +37,14 @@ def setup(self):
 
     # to check if the number of coins has changed.
     self.last_coin_number = 0
-    if self.train or not os.path.isfile(model_path):
+    if self.train:  # or not os.path.isfile(model_path):
         print("no model yet")
 
     else:
         self.logger.info("Loading model from saved state.")
-        with open("my-saved-model.pt", "rb") as file:
-            self.model = pickle.load(file)
-
-        print(self.model)
-        print(self.model.shape)
-
-        with open("model_dict.json", "r") as f:
-            self.feature_dict = json.load(f)
+        # with open("my-saved-model.pt", "rb") as file:
+        print("load")
+        self.model = load_model(model_path)
 
 
 def act(self, game_state: dict) -> str:
@@ -63,16 +59,16 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     # best_step = find_coin(self, game_state)
 
-    random_prob = 0.2
+    random_prob = 0.7
     if self.train and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
         return np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.2])
     else:
         self.logger.debug("Querying model for action.")
-        prediction = np.mean(
-            self.model.predict(state_to_features(self, game_state)), axis=0
-        )
+        feature = state_to_features(self, game_state).reshape(-1, 7)
+        prediction = self.model.predict(feature)
+        self.logger.debug("Model decision:" + str(np.argmax(prediction)))
         self.trace.append(np.argmax(prediction))
         return ACTIONS[self.trace[-1]]
 
@@ -167,5 +163,4 @@ def state_to_features(self, game_state: dict) -> np.array:
     else:
         previous_step = 0
     features = np.array(find_walls + [coin_target, self.distance_value, previous_step])
-
     return features
