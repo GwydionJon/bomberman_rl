@@ -111,3 +111,6 @@ screenshots/*.webm
 
 replays/
 results/
+agent_code/cc_agent_tensorflow/tensorflow_model/saved_model.pb
+agent_code/cc_agent_tensorflow/tensorflow_model/variables/variables.index
+agent_code/cc_agent_tensorflow/tensorflow_model/variables/variables.data-00000-of-00001
