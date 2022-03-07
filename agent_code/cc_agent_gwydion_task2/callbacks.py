@@ -71,7 +71,7 @@ def act(self, game_state: dict) -> str:
     # best_step = find_coin(self, game_state)
 
     random_prob = 0.25
-    if self.train and random.random() < random_prob:
+    if self.first_training_round is True and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
 
