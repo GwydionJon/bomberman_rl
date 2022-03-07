@@ -71,12 +71,11 @@ def act(self, game_state: dict) -> str:
     # best_step = find_coin(self, game_state)
 
     random_prob = 0.25
-    p = 1 / 6
     if self.train and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
 
-        random_action = np.random.choice(ACTIONS, p=[p, p, p, p, p, p])
+        random_action = np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1])
         self.trace.append(ACTIONS.index(random_action))
         return random_action
     else:
@@ -95,7 +94,7 @@ def act(self, game_state: dict) -> str:
 
         except:
             print("exept")
-            random_action = np.random.choice(ACTIONS, p=[p, p, p, p, p, p])
+            random_action = np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1])
 
             self.trace.append(ACTIONS.index(random_action))
             return random_action
@@ -110,8 +109,7 @@ def find_coin(
     coins = game_state["coins"]  # Position of visible coins
 
     if len(coins) == 0:
-        p = 1 / 6
-        action = np.random.choice(ACTIONS, p=[p, p, p, p, p, p])
+        action = np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1])
         self.distance_trace.append(-1)
         self.stuck = 1
         return ACTIONS.index(action)
@@ -156,9 +154,11 @@ def find_coin(
     return new_pos  # new acceptable position -> go there
 
 
-def find_objects(self, object_coordinates, current_pos, field):
+def find_objects(self, object_coordinates, current_pos, field, return_coords=False):
     x, y = current_pos
     if object_coordinates == []:
+        if return_coords:
+            return 0, 0, None
         return 0, 0
     min_distance_ind = np.argmin(
         np.sum(np.abs(np.asarray(object_coordinates) - np.asarray(current_pos)), axis=1)
@@ -188,6 +188,8 @@ def find_objects(self, object_coordinates, current_pos, field):
     else:
         distance_value = 1
 
+    if return_coords:
+        return distance_value, direction, object_coord
     return distance_value, direction
 
 
@@ -231,16 +233,33 @@ def state_to_features(self, game_state: dict) -> np.array:
     if 1 in surroundings:
         self.next_to_box = 1
 
+    if self.target is not None:
+        if self.target not in game_state["coins"]:
+            self.target = None
     # find coin target
-    coin_distance, coin_direction = find_objects(
-        self,
-        game_state["coins"],
-        (
-            x,
-            y,
-        ),
-        field,
-    )
+    if self.target is None:
+        coin_distance, coin_direction, self.target = find_objects(
+            self,
+            game_state["coins"],
+            (
+                x,
+                y,
+            ),
+            field,
+            return_coords=True,
+        )
+    else:
+        coin_distance, coin_direction, self.target = find_objects(
+            self,
+            [self.target],
+            (
+                x,
+                y,
+            ),
+            field,
+            return_coords=True,
+        )
+
     self.distance_trace.append(coin_distance)
     if len(self.distance_trace) > 2:
         # the closer the higher the value
@@ -276,7 +295,6 @@ def state_to_features(self, game_state: dict) -> np.array:
             moved_away,
             bomb_direction,
             self.bool_bomb,
-            self.trace[-2],
         ]
     )
 

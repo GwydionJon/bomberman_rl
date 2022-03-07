@@ -81,20 +81,24 @@ def game_events_occurred(
 
     new_index = feature_index(self, state_to_features(self, new_game_state))
 
-    alpha = 0.1
-    gamma = 0.5
-    # epsilon = 0.9
+    alpha = 0.01
+    gamma = 0.1
+    epsilon = 0.1
     reward = reward_from_events(self, events)
     old_val = self.model[old_index, ACTIONS.index(self_action)]
+    # Implementing SARSA method
+    if np.random.rand() < (1 - epsilon):
+        new_action = np.argmax(self.model[new_index])
 
+    else:
+        new_action = ACTIONS.index(
+            np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1])
+        )
     new_val = old_val + alpha * (
-        reward + gamma * np.max(self.model[new_index]) - old_val
+        reward + gamma * self.model[new_index, new_action] - old_val
     )
 
     self.model[old_index, ACTIONS.index(self_action)] = new_val
-
-    _, score, bool_bomb, (x, y) = new_game_state["self"]
-    # self.trace.append([x,y])
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -133,7 +137,7 @@ def reward_from_events(self, events: List[str]) -> int:
     game_rewards = {
         e.COIN_COLLECTED: 1,
         e.KILLED_OPPONENT: 5,
-        e.WAITED: -2.3,
+        e.WAITED: -0.3,
         e.INVALID_ACTION: -10,
         e.CRATE_DESTROYED: 0.3,
         e.KILLED_SELF: -5,
@@ -157,7 +161,7 @@ def reward_from_events(self, events: List[str]) -> int:
         reward_sum += 0.6
         reward_events.append("Bomb next to Crate")
     # encurage running towards coin
-    if len(self.distance_trace) > 2:
+    if len(self.distance_trace) > 2 and not e.COIN_COLLECTED in events:
         # the closer the higher the value
         if self.distance_trace[-2] < self.distance_trace[-1]:
             reward_sum += 0.6
@@ -179,14 +183,15 @@ def reward_from_events(self, events: List[str]) -> int:
             reward_events.append("away from bomb")
 
     # punish bomb dropping when no bomb available
-    if e.BOMB_DROPPED and not self.bool_bomb:
+    if e.BOMB_DROPPED in events and not self.bool_bomb:
         reward_sum += -1
         reward_events.append("no bomb available")
 
-    if not any(x in (self.trace[-1], self.trace[-2]) for x in [4, 5]):
-        if self.trace[-1] == self.trace[-2] + 2 or self.trace[-1] == self.trace[-2] - 2:
-            reward_sum += -1
-            reward_events.append("run in circles")
+    # if not any(x in (self.trace[-1], self.trace[-2]) for x in [4, 5]):
+    #     if self.trace[-1] == self.trace[-2] + 2 or self.trace[-1] == self.trace[-2] - 2:
+    #         reward_sum += -1
+    #         reward_events.append("run in circles")
 
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(reward_events)}")
+    self.logger.info("")
     return reward_sum

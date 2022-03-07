@@ -1,1 +1,1 @@
-python main.py play --agent cc_agent_gwydion_task2  --scenario coin-heaven --train 1 --no-gui --n-rounds $1
+python main.py play --agent cc_agent_gwydion_task2  --train 1 --no-gui --n-rounds $1
