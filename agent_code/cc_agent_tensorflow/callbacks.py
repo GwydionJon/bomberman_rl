@@ -162,5 +162,5 @@ def state_to_features(self, game_state: dict) -> np.array:
         previous_step = self.trace[-1]
     else:
         previous_step = 0
-    features = np.array(find_walls + [coin_target, self.distance_value, previous_step])
+    features = np.array(find_walls + [coin_target, self.distance_value])
     return features
