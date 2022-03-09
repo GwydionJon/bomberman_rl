@@ -4,10 +4,10 @@ import random
 import json
 from this import d
 import numpy as np
-
+import settings as s
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
-STATE_FEATURES = 2
+STATE_FEATURES = 3
 
 
 def setup(self):
@@ -27,6 +27,7 @@ def setup(self):
 
     # target stores the current target coin
     self.target = None
+    self.running_circles = 0
 
     # stores the distance to the target
     self.trace = []
@@ -82,14 +83,33 @@ def act(self, game_state: dict) -> str:
         self.logger.debug("Querying model for action.")
 
         try:
-            print("try")
-            decision = np.argmax(
-                self.model[feature_index(self, state_to_features(self, game_state)), :]
+
+            decision = np.argsort(
+                self.model[feature_index(self, state_to_features(self, game_state)), :],
+                axis=0,
             )
+
+            decision = np.random.choice(
+                [decision[-1], decision[-2]],
+                p=[
+                    decision[-1] / (decision[-1] + decision[-2]),
+                    decision[-2] / (decision[-1] + decision[-2]),
+                ],
+            )
+            # decision = decision[-1]
 
             self.trace.append(decision)
 
-            self.logger.debug("Model Decision: " + ACTIONS[decision])
+            self.logger.debug(
+                "Model Decision: "
+                + str(decision)
+                + " chosen from:"
+                + str(
+                    self.model[
+                        feature_index(self, state_to_features(self, game_state)), :
+                    ]
+                )
+            )
             return ACTIONS[decision]
 
         except:
@@ -158,8 +178,8 @@ def find_objects(self, object_coordinates, current_pos, field, return_coords=Fal
     x, y = current_pos
     if object_coordinates == []:
         if return_coords:
-            return 0, 0, None
-        return 0, 0
+            return 0, -1, None
+        return 0, -1
     min_distance_ind = np.argmin(
         np.sum(np.abs(np.asarray(object_coordinates) - np.asarray(current_pos)), axis=1)
     )
@@ -179,18 +199,50 @@ def find_objects(self, object_coordinates, current_pos, field, return_coords=Fal
 
     direction = np.argmin(np.sum(np.abs(neighbour_tiles - object_coord), axis=1))
 
-    if distance <= 1:
-        distance_value = 4
-    elif distance <= 2:
-        distance_value = 3
-    elif distance <= 4:
-        distance_value = 2
-    else:
-        distance_value = 1
-
     if return_coords:
-        return distance_value, direction, object_coord
-    return distance_value, direction
+        return distance, direction, object_coord
+    return distance, direction
+
+
+def add_bomb_path_to_field(bomb_coords, explosions, field):
+    def _get_blast_coords(bomb, field):
+        x, y = bomb[0], bomb[1]
+        blast_coords = [(x, y)]
+
+        for i in range(1, s.BOMB_POWER + 1):
+            if field[x + i, y] == -1:
+                break
+            blast_coords.append((x + i, y))
+        for i in range(1, s.BOMB_POWER + 1):
+            if field[x - i, y] == -1:
+                break
+            blast_coords.append((x - i, y))
+        for i in range(1, s.BOMB_POWER + 1):
+            if field[x, y + i] == -1:
+                break
+            blast_coords.append((x, y + i))
+        for i in range(1, s.BOMB_POWER + 1):
+            if field[x, y - i] == -1:
+                break
+            blast_coords.append((x, y - i))
+
+        return blast_coords
+
+    # print(explosions)
+
+    if bomb_coords == []:
+        return field
+    for bomb_coord in bomb_coords:
+        blast_coord = _get_blast_coords(bomb_coord, field)
+        for blast in blast_coord:
+            field[blast] = 2
+    # for explosion in explosions:
+    #     print(explosion)
+    #     field[explosion] = 2
+
+    # also add current explosion map
+
+    return field
 
 
 def state_to_features(self, game_state: dict) -> np.array:
@@ -216,60 +268,47 @@ def state_to_features(self, game_state: dict) -> np.array:
     field = game_state["field"].T
     # check in which directions walls are: UP-RIGHT-DOWN-LEFT
 
-    surroundings = [
-        field[x, y + 1],
-        field[x + 1, y],
-        field[x, y - 1],
-        field[x - 1, y],
-    ]
+    # surroundings = [
+    #     field[x, y + 1],
+    #     field[x + 1, y],
+    #     field[x, y - 1],
+    #     field[x - 1, y],
+    # ]
+    bombs_coordinates = [(x, y) for ((x, y), t) in game_state["bombs"]]
 
-    if self.trace[-1] == 5:
-        self.dropped_bomb = 1
-    else:
-        self.dropped_bomb = 0
+    field = add_bomb_path_to_field(
+        bombs_coordinates, game_state["explosion_map"], field
+    )
+
+    # search for bombs, crates and space in surroundings
+    self.surroundings = []
+
+    for x_i in range(-2, 3):
+        for y_i in range(-2, 3):
+            if (x + x_i) < field.shape[0] and (y + y_i) < field.shape[1]:
+                self.surroundings.append(field[x + x_i, y + y_i])
+            else:
+                self.surroundings.append(-1)
 
     # is box adjecant:
     self.next_to_box = 0
-    if 1 in surroundings:
+    if 1 in self.surroundings:
         self.next_to_box = 1
 
-    if self.target is not None:
-        if self.target not in game_state["coins"]:
-            self.target = None
     # find coin target
-    if self.target is None:
-        coin_distance, coin_direction, self.target = find_objects(
-            self,
-            game_state["coins"],
-            (
-                x,
-                y,
-            ),
-            field,
-            return_coords=True,
-        )
-    else:
-        coin_distance, coin_direction, self.target = find_objects(
-            self,
-            [self.target],
-            (
-                x,
-                y,
-            ),
-            field,
-            return_coords=True,
-        )
-
+    coin_distance, self.coin_direction, self.target = find_objects(
+        self,
+        game_state["coins"],
+        (
+            x,
+            y,
+        ),
+        field,
+        return_coords=True,
+    )
     self.distance_trace.append(coin_distance)
-    if len(self.distance_trace) > 2:
-        # the closer the higher the value
-        moved_to_coin = self.distance_trace[-2] < self.distance_trace[-1]
-    else:
-        moved_to_coin = 0
 
-    # find bomb danger
-    bombs_coordinates = [(x, y) for ((x, y), t) in game_state["bombs"]]
-    bomb_distance, bomb_direction = find_objects(
+    bomb_distance, self.bomb_direction = find_objects(
         self,
         bombs_coordinates,
         (
@@ -279,22 +318,11 @@ def state_to_features(self, game_state: dict) -> np.array:
         field,
     )
 
-    self.bomb_trace.append(bomb_distance)
-    if len(self.bomb_trace) > 2:
-        # the closer the higher the value
-
-        moved_away = self.bomb_trace[-2] > self.bomb_trace[-1]
-    else:
-        moved_away = 0
-
     features = np.array(
-        surroundings
+        self.surroundings
         + [
-            moved_to_coin,
-            coin_direction,
-            moved_away,
-            bomb_direction,
-            self.bool_bomb,
+            self.coin_direction,
+            self.bomb_direction,
         ]
     )
 

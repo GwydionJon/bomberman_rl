@@ -14,15 +14,14 @@ from tensorflow.keras.layers import Dense, Embedding, Reshape, Flatten, InputLay
 from tensorflow.keras.optimizers import Adam
 import pandas as pd
 
-ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT"]  # , 'BOMB']
-STATE_FEATURES = 7
-batch_size = 40
+ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
+STATE_FEATURES = 27
 
 
 def create_model(self):
 
     model = Sequential()
-    model.add(InputLayer(input_shape=(7)))
+    model.add(InputLayer(input_shape=(STATE_FEATURES)))
     model.add(Dense(50, activation="relu"))
     model.add(Dense(50, activation="relu"))
     model.add(Dense(15, activation="relu"))
@@ -32,7 +31,6 @@ def create_model(self):
     model.compile(loss="mse", optimizer=Adam())
     model.build()
     print("done")
-    # model.fit([[0,0,0,0,0,0,0]],[[0,0,0,0,0]])
     return model
 
 
@@ -50,15 +48,16 @@ def setup_training(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     # (s, a, r, s')
-    self.model = create_model(self)  # =q_table
-    self.future_target = create_model(self)
-    align_target_model(self.model, self.future_target)
+    if self.first_training_round == True:
+        self.model = create_model(self)  # =q_table
+        self.future_target = create_model(self)
+        align_target_model(self.model, self.future_target)
 
-    self.history = {}
-    self.history["old_features"] = np.zeros((400, STATE_FEATURES))
-    self.history["actions"] = np.zeros(400, dtype=int)
-    self.history["rewards"] = np.zeros(400)
-    self.history["new_features"] = np.zeros((400, STATE_FEATURES))
+        self.history = {}
+        self.history["old_features"] = np.zeros((400, STATE_FEATURES))
+        self.history["actions"] = np.zeros(400, dtype=int)
+        self.history["rewards"] = np.zeros(400)
+        self.history["new_features"] = np.zeros((400, STATE_FEATURES))
 
 
 def game_events_occurred(
@@ -95,7 +94,7 @@ def game_events_occurred(
         return
 
     step = old_game_state["step"] - 1
-    reward = reward_from_events(self, events)
+    reward = reward_from_events(self, events, self_action)
     self.history["new_features"][step] = state_to_features(self, new_game_state)
     self.history["old_features"][step] = state_to_features(self, old_game_state)
     self.history["actions"][step] = int(ACTIONS.index(self_action))
@@ -115,11 +114,16 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     :param self: The same object that is passed to all of your callbacks.
     """
+    step = last_game_state["step"] - 1
+    reward = reward_from_events(self, events, last_action)
+    self.history["new_features"][step] = state_to_features(self, last_game_state)
+    self.history["old_features"][step] = state_to_features(self, last_game_state)
+    self.history["actions"][step] = int(ACTIONS.index(last_action))
+    self.history["rewards"][step] = reward
+
     self.logger.debug(
         f'Encountered event(s) {", ".join(map(repr, events))} in final step'
     )
-
-    reward = reward_from_events(self, events)
 
     train_models(self)
     self.model.save("tensorflow_model")
@@ -132,16 +136,19 @@ def train_models(self):
     old_features, actions, rewards, new_features = self.history.values()
 
     # for i in range(len(old_features)):
-    target = self.model.predict(old_features.reshape(-1, 7))
-    target_future = self.future_target.predict(new_features.reshape(-1, 7))
+    target = self.model.predict(old_features.reshape(-1, STATE_FEATURES))
+    target_future = self.future_target.predict(new_features.reshape(-1, STATE_FEATURES))
 
     target[:, actions] = rewards + gamma * np.amax(target_future, axis=1)
     self.model.fit(
-        old_features.reshape(-1, 7), target.reshape(-1, 5), epochs=1, verbose=0
+        old_features.reshape(-1, STATE_FEATURES),
+        target.reshape(-1, len(ACTIONS)),
+        epochs=1,
+        verbose=0,
     )
 
 
-def reward_from_events(self, events: List[str]) -> int:
+def reward_from_events(self, events: List[str], self_action) -> int:
     """
     *This is not a required function, but an idea to structure your code.*
 
@@ -149,19 +156,86 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.COIN_COLLECTED: 1,
+        e.COIN_COLLECTED: 2,
         e.KILLED_OPPONENT: 5,
-        e.WAITED: -0.3,
+        e.COIN_FOUND: 1,
+        e.WAITED: -2,
         e.INVALID_ACTION: -10,
+        e.CRATE_DESTROYED: 0.3,
+        e.KILLED_SELF: -50,
     }
     reward_sum = 0
+    reward_events = []
+
     for event in events:
         if event in game_rewards:
+            reward_events.append(event)
             reward_sum += game_rewards[event]
-    if len(self.distance_trace) > 3:
-        # reward getting closer to the target coin
-        if self.distance_trace[-1] < self.distance_trace[-2]:
-            reward_sum += 1
 
-    self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
+    # encurage blowing up crates
+    if self.next_to_box and ACTIONS.index(self_action) == 5:
+        reward_sum += 1
+        reward_events.append("Bomb next to Crate")
+
+    # chek if at an intersection:
+    intersection = 0
+    for i in [7, 11, 13, 17]:
+        if self.surroundings[i] != 1:
+            intersection += 1
+    # don't blow up bomb if no creates are nearby
+    if intersection == 4 and ACTIONS.index(self_action) == 5:
+        reward_sum += -1
+        reward_events.append("no crates")
+
+    if self.coin_direction != -1:
+        if ACTIONS.index(self_action) == self.coin_direction:
+            reward_sum += 0.5
+            reward_events.append("moved in direction of coin")
+
+        elif ACTIONS.index(self_action) != self.coin_direction:
+            reward_sum += -0.7
+            reward_events.append("moved not in direction of coin")
+
+    if self.bomb_direction != -1 and not ACTIONS.index(self_action) == 5:
+
+        if ACTIONS.index(self_action) == self.bomb_direction:
+            reward_sum += -4
+            reward_events.append("moved in direction of bomb")
+
+        elif ACTIONS.index(self_action) != self.bomb_direction:
+            reward_sum += 4
+            reward_events.append("moved not in direction of bomb")
+
+    # if self.bool_bomb == False and e.WAITED in events:
+    #     reward_sum -= 3
+
+    # # encurage running towards coin
+    # # if len(self.distance_trace) > 2 and not e.COIN_COLLECTED in events:
+    # #     # the closer the higher the value
+    # #     if self.distance_trace[-2] < self.distance_trace[-1]:
+    # #         reward_sum += 0.6
+    # #         reward_events.append("towards coin")
+
+    # #     elif self.distance_trace[-2] > self.distance_trace[-1]:
+    # #         reward_sum += -0.6
+    # #         reward_events.append("away from coin")
+
+    # # encurage running away from bomb
+    # if len(self.bomb_trace) > 2:
+    #     # the closer the higher the value
+    #     if self.bomb_trace[-2] < self.bomb_trace[-1]:
+    #          reward_sum += -3
+    #          reward_events.append("towards bomb")
+
+    #     elif self.bomb_trace[-2] > self.bomb_trace[-1]:
+    #         reward_sum += 3
+    #         reward_events.append("away from bomb")
+
+    # punish bomb dropping when no bomb available
+    # if e.BOMB_DROPPED in events and not self.bool_bomb:
+    #     reward_sum += -1
+    #     reward_events.append("no bomb available")
+
+    self.logger.info(f"Awarded {reward_sum} for events {', '.join(reward_events)}")
+    self.logger.info("")
     return reward_sum
