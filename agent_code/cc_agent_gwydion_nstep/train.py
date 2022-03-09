@@ -4,10 +4,12 @@ import pickle
 from typing import List
 
 import events as e
-from .callbacks import state_to_features, feature_index, act
+from .callbacks import state_to_features, feature_index, act, add_bomb_path_to_field
 import random as random
 import numpy as np
 import json
+import pandas as pd
+import os
 
 
 # Transition cache
@@ -18,8 +20,8 @@ STATE_FEATURES = 3
 # parameters
 N = 5  # Temporal difference steps
 alpha = 0.01  # learning rate
-gamma = 0.6  # discout factor
-epsilon = 0.1  # E-greedy method
+gamma = 0.3  # discout factor
+epsilon = 0.3  # E-greedy method
 
 # additional events:
 CHASING_COIN = "CHASING_COIN"
@@ -27,6 +29,9 @@ MOVED_TOWARDS_BOMB = "MOVED_TOWARDS_BOMB"
 MOVED_FROM_BOMB = "MOVED_FROM_BOMB"
 GOOD_BOMB_PLACEMENT = "GOOD_BOMB_PLACEMENT"
 BAD_BOMB_PLACEMENT = "BAD_BOMB_PLACEMENT"
+MOVED_IN_DANGER = "MOVED_IN_DANGER"
+MOVED_FROM_DANGER = "MOVED_FROM_DANGER"
+STAYED_IN_DANGER = "STAYED_IN_DANGER"
 
 
 def create_model(self):
@@ -62,7 +67,6 @@ def TD_nstep(self, n):
     last_state_index = feature_index(self, transitions[-1, 2])
     # do n-step sarsa (Number n defined)
     if len(transitions) == n:
-
         for t in range(n):
 
             total_reward += np.float_power(gamma, t) * float(transitions[t, -1])
@@ -74,15 +78,19 @@ def TD_nstep(self, n):
             new_action = ACTIONS.index(
                 np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1])
             )
-        G = total_reward + np.float(gamma, n) * self.model[last_state_index, new_action]
+        G = total_reward + gamma**n * self.model[last_state_index, new_action]
 
         update_index = feature_index(self, transitions[0, 0])
         update_action = ACTIONS.index(transitions[0, 1])
 
+        self.logger.debug(f"Old Value: {self.model[update_index, update_action]}")
         Q_value = self.model[update_index, update_action] + alpha * (
             G - self.model[update_index, update_action]
         )
+
         self.model[update_index, update_action] = Q_value
+        self.logger.debug(f"new Value: {self.model[update_index, update_action]}")
+
     else:
         # Do normal sarsa
         # Implementing SARSA method
@@ -147,7 +155,7 @@ def game_events_occurred(
     if self_action is None or old_game_state is None or new_game_state is None:
         return
 
-    events = add_own_events(self, events, self_action, old_game_state)
+    events = add_own_events(self, events, self_action, old_game_state, new_game_state)
 
     # Adding the last move to the transition cache
     self.transitions.append(
@@ -155,7 +163,7 @@ def game_events_occurred(
             state_to_features(self, old_game_state),
             self_action,
             state_to_features(self, new_game_state),
-            reward_from_events(self, events, self_action),
+            reward_from_events(self, events),
         )
     )
 
@@ -179,13 +187,15 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         f'Encountered event(s) {", ".join(map(repr, events))} in final step'
     )
 
+    events = add_own_events(self, events, last_action, last_game_state, last_game_state)
+
     # Adding the last move to the transition cache
     self.transitions.append(
         Transition(
             state_to_features(self, last_game_state),
             last_action,
             None,
-            reward_from_events(self, events, last_action),
+            reward_from_events(self, events),
         )
     )
     train_model(self, last_game_state, last_action, events)
@@ -196,11 +206,13 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     with open("my-saved-model.pt", "wb") as file:
         pickle.dump(self.model, file)
 
+    save_game_statistic(self, last_game_state)
+
     # reset history:
     self.transitions = deque(maxlen=N)
 
 
-def reward_from_events(self, events: List[str], self_action) -> float:
+def reward_from_events(self, events: List[str]) -> float:
     """
     *This is not a required function, but an idea to structure your code.*
 
@@ -217,22 +229,25 @@ def reward_from_events(self, events: List[str], self_action) -> float:
 
     """
     game_rewards = {
-        e.COIN_COLLECTED: 3,
+        e.COIN_COLLECTED: 15,
         e.KILLED_OPPONENT: 5,
         e.COIN_FOUND: 1,
-        e.WAITED: -2,
-        e.INVALID_ACTION: -10,
+        e.WAITED: -9,
+        e.INVALID_ACTION: -20,
         e.CRATE_DESTROYED: 0.3,
-        e.KILLED_SELF: -15,
-        e.MOVED_DOWN: -1,
-        e.MOVED_LEFT: -1,
-        e.MOVED_RIGHT: -1,
-        e.MOVED_UP: -1,
+        e.KILLED_SELF: -80,
+        e.MOVED_DOWN: -3,
+        e.MOVED_LEFT: -3,
+        e.MOVED_RIGHT: -3,
+        e.MOVED_UP: -3,
         CHASING_COIN: 3,
         MOVED_TOWARDS_BOMB: -5,
         MOVED_FROM_BOMB: 5,
-        GOOD_BOMB_PLACEMENT: 2,
+        GOOD_BOMB_PLACEMENT: 7,
         BAD_BOMB_PLACEMENT: -2,
+        MOVED_IN_DANGER: -20,
+        MOVED_FROM_DANGER: 20,
+        #  STAYED_IN_DANGER:-30
     }
     reward_sum = 0
     reward_events = []
@@ -247,34 +262,92 @@ def reward_from_events(self, events: List[str], self_action) -> float:
     return reward_sum
 
 
-def add_own_events(self, events, action, game_state):
+def add_own_events(self, events, action, old_game_state, new_game_state):
+
+    old_player_coor = old_game_state["self"][3]
+    new_player_coor = new_game_state["self"][3]
+
+    coin_coordinates = old_game_state["coins"]
+    if len(coin_coordinates) != 0:
+        old_coin_distances = np.linalg.norm(
+            np.subtract(coin_coordinates, old_player_coor), axis=1
+        )
+        new_coin_distances = np.linalg.norm(
+            np.subtract(coin_coordinates, new_player_coor), axis=1
+        )
+
+        if min(new_coin_distances) < min(old_coin_distances):
+
+            events.append(CHASING_COIN)
+
+    # reward moving from bomb
+    bombs = old_game_state["bombs"]
+    bomb_coordinates = [(x, y) for ((x, y), t) in bombs]
+
+    if len(bomb_coordinates) != 0:
+        old_bomb_distance = np.linalg.norm(
+            np.subtract(bomb_coordinates, old_player_coor), axis=1
+        )
+        new_bomb_distance = np.linalg.norm(
+            np.subtract(bomb_coordinates, new_player_coor), axis=1
+        )
+
+        if min(new_bomb_distance) < min(old_bomb_distance):
+
+            events.append(MOVED_TOWARDS_BOMB)
+
+        else:
+            events.append(MOVED_FROM_BOMB)
+
+    # penelize standing in danger.
+
+    old_field = add_bomb_path_to_field(
+        old_game_state["bombs"],
+        old_game_state["explosion_map"],
+        old_game_state["field"].T,
+    )
+    new_field = add_bomb_path_to_field(
+        new_game_state["bombs"],
+        new_game_state["explosion_map"],
+        new_game_state["field"].T,
+    )
+
+    if old_field[old_player_coor] == 2 and new_field[new_player_coor] == 0:
+        events.append(MOVED_FROM_DANGER)
+    elif old_field[old_player_coor] == 0 and new_field[new_player_coor] == 2:
+        events.append(MOVED_IN_DANGER)
+    elif old_field[old_player_coor] == 2 and new_field[new_player_coor] == 2:
+        events.append(STAYED_IN_DANGER)
 
     # bomb next to crate
     if self.next_to_box and ACTIONS.index(action) == 5:
         events.append(GOOD_BOMB_PLACEMENT)
 
     # chek if at an intersection:
-    intersection = 0
-    for i in [7, 11, 13, 17]:
-        if self.surroundings[i] != 1:
-            intersection += 1
+
     # don't blow up bomb if no creates are nearby
-    if intersection == 4 and ACTIONS.index(action) == 5:
+    if not self.next_to_box and ACTIONS.index(action) == 5:
         events.append(BAD_BOMB_PLACEMENT)
 
-    if len(self.distance_trace) > 2:
-        self.logger.debug(
-            f"distance trace: {self.distance_trace[-1]}, {self.distance_trace[-2]}"
-        )
-
-        if self.distance_trace[-1] < self.distance_trace[-2]:
-            events.append(CHASING_COIN)
-
-    if self.bomb_direction != -1 and not ACTIONS.index(action) == 5:
-
-        if ACTIONS.index(action) == self.bomb_direction:
-            events.append(MOVED_TOWARDS_BOMB)
-
-        elif ACTIONS.index(action) != self.bomb_direction:
-            events.append(MOVED_FROM_BOMB)
     return events
+
+
+def save_game_statistic(self, game_state):
+    filename = "learning_stat.csv"
+
+    round = game_state["round"]
+    steps = game_state["step"]
+    _, score, self.bool_bomb, (x, y) = game_state["self"]
+
+    old_count = 0
+    header = True
+    if os.path.exists(filename):
+        header = False
+        df_old = pd.read_csv(filename)
+        old_count = int(df_old["round"].values[-1])
+
+    summary = {"round": [1 + old_count], "steps": [steps], "score": [score]}
+
+    df = pd.DataFrame.from_dict(summary)
+
+    df.to_csv(filename, mode="a", header=header)

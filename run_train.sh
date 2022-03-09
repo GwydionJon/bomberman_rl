@@ -1,1 +1,0 @@
-python main.py play --agent cc_agent_gwydion --scenario coin-heaven --train 1 --no-gui --n-rounds $1
