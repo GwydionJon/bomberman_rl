@@ -5,8 +5,9 @@ import random
 import numpy as np
 
 
-ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT' ]  #, 'BOMB']
-STATE_FEATURES = 53 
+ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT"]  # , 'BOMB']
+STATE_FEATURES = 53
+
 
 def setup(self):
     """
@@ -23,12 +24,12 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.target = None
-    
+
     if self.train and not os.path.isfile("my-saved-model_v2.pt"):
         print("First round")
         self.logger.info("Setting up model from scratch.")
         self.first_training_round = True
-        self.model = np.zeros((STATE_FEATURES,len(ACTIONS)))
+        self.model = np.zeros((STATE_FEATURES, len(ACTIONS)))
     elif self.train and os.path.isfile("my-saved-model_v2.pt"):
         print("second round")
         self.logger.info("Loading model from saved state.")
@@ -52,52 +53,62 @@ def act(self, game_state: dict) -> str:
     :return: The action to take as a string.
     """
     # todo Exploration vs exploitation
-    #best_step = find_coin(self, game_state)
-    
-    random_prob = .1
+    # best_step = find_coin(self, game_state)
+
+    random_prob = 0.1
     if self.first_training_round is True and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
-        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .2])
+        return np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.2])
     else:
         self.logger.debug("Querying model for action.")
-        
-        return ACTIONS[np.argmax(self.model[feature_index(state_to_features(self, game_state)),:])]
 
-def find_coin(self, game_state: dict): #Function which finds nearest coin and decides then where to go
-    _, score, bool_bomb, (x, y) = game_state['self']
-    current = np.array([x,y]) # Curent position of agent
-    coins = game_state['coins'] # Position of visible coins
-    if len(coins)==0:
-        action = np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .2])
+        return ACTIONS[
+            np.argmax(self.model[feature_index(state_to_features(self, game_state)), :])
+        ]
+
+
+def find_coin(
+    self, game_state: dict
+):  # Function which finds nearest coin and decides then where to go
+    _, score, bool_bomb, (x, y) = game_state["self"]
+    current = np.array([x, y])  # Curent position of agent
+    coins = game_state["coins"]  # Position of visible coins
+    if len(coins) == 0:
+        action = np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.2])
         return ACTIONS.index(action)
-    #free_tiles = game_state['field'].T == 0 # Free tiles on field
-    #Board = np.indices((17,17)).transpose((1,2,0))
-    #free_tiles = Board[free_tiles]
-    field = game_state['field'].T
-    #Finding minimum distance to a coin
-    
-  #  self.last_coin_number = len(coins)
-    
-   # print(self.target)
-    #if self.last_coin_number != len(coins):
-     #   print("set target none")
-      #  self.target == None
- 
+    # free_tiles = game_state['field'].T == 0 # Free tiles on field
+    # Board = np.indices((17,17)).transpose((1,2,0))
+    # free_tiles = Board[free_tiles]
+    field = game_state["field"].T
+    # Finding minimum distance to a coin
+
+    #  self.last_coin_number = len(coins)
+
+    # print(self.target)
+    # if self.last_coin_number != len(coins):
+    #   print("set target none")
+    #  self.target == None
+
     # choose target
-    #if self.target is None:
-    min_distance =np.argmin(np.sum(np.abs(coins-current),axis=1)) 
-    self.target = np.array(coins[min_distance]) #Setting coordinates of coin/target
-        
-   # array of possible movements - free tiles :UP - RIGHT - DOWN - LEFT
-    neighbour_tiles = np.array([[x, y +1] if field[x,y+1]==0 else [1000,1000], 
-                                [x +1, y] if field[x+1,y]==0 else [1000,1000], 
-                                [x, y -1] if field[x, y-1]==0 else [1000,1000],
-                                [x- 1, y] if field[x-1,y]==0 else [1000,1000]])
-   
-    new_pos = np.argmin(np.sum(np.abs(neighbour_tiles - self.target),axis=1))
-    #new_pos = possible_steps[new_pos]
-    return new_pos # new acceptable position -> go there
+    # if self.target is None:
+    min_distance = np.argmin(np.sum(np.abs(coins - current), axis=1))
+    self.target = np.array(coins[min_distance])  # Setting coordinates of coin/target
+
+    # array of possible movements - free tiles :UP - RIGHT - DOWN - LEFT
+    neighbour_tiles = np.array(
+        [
+            [x, y + 1] if field[x, y + 1] == 0 else [1000, 1000],
+            [x + 1, y] if field[x + 1, y] == 0 else [1000, 1000],
+            [x, y - 1] if field[x, y - 1] == 0 else [1000, 1000],
+            [x - 1, y] if field[x - 1, y] == 0 else [1000, 1000],
+        ]
+    )
+
+    new_pos = np.argmin(np.sum(np.abs(neighbour_tiles - self.target), axis=1))
+    # new_pos = possible_steps[new_pos]
+    return new_pos  # new acceptable position -> go there
+
 
 def state_to_features(self, game_state: dict) -> np.array:
     """
@@ -116,29 +127,26 @@ def state_to_features(self, game_state: dict) -> np.array:
     # This is the dict before the game begins and after it ends
     if game_state is None:
         return None
-     
-# =============================================================================
-#     
-#     # For example, you could construct several channels of equal shape, ...
-#     channels = []
-#     channels.append(...)
-#     # concatenate them as a feature tensor (they must have the same shape), ...
-#     stacked_channels = np.stack(channels)
-#     # and return them as a vector
-#     return stacked_channels.reshape(-1)
-# 
-# =============================================================================
-    
-    _, score, bool_bomb, (x, y) = game_state['self']
-    coin_target = find_coin(self, game_state) 
-    field = game_state['field'].T
+
+    _, score, bool_bomb, (x, y) = game_state["self"]
+    coin_target = find_coin(self, game_state)
+    field = game_state["field"].T
     # check in which directions walls are: UP-RIGHT-DOWN-LEFT
-    find_walls= [1 if field[x, y+1] == -1 else 0, 
-                 1 if field[x+1, y] == -1 else 0,
-                 1 if field[x, y-1] == -1 else 0, 
-                 1 if field[x-1, y] == -1 else 0]
-    features = np.array(find_walls + [coin_target]) 
-    return  features
+    find_walls = [
+        1 if field[x, y + 1] == -1 else 0,
+        1 if field[x + 1, y] == -1 else 0,
+        1 if field[x, y - 1] == -1 else 0,
+        1 if field[x - 1, y] == -1 else 0,
+    ]
+    features = np.array(find_walls + [coin_target])
+    return features
+
 
 def feature_index(features):
-    return 2**3*4*features[0]+2**2*4*features[1]+2*4*features[2]+4*features[3]+features[4]
+    return (
+        2**3 * 4 * features[0]
+        + 2**2 * 4 * features[1]
+        + 2 * 4 * features[2]
+        + 4 * features[3]
+        + features[4]
+    )
