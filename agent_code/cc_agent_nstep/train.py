@@ -61,7 +61,7 @@ def TD_nstep(self,n):
     transitions = np.array(self.transitions)
     
     last_state_index = feature_index(self, transitions[-1,2])
-    
+    #do n-step sarsa (Number n defined)
     if len(transitions) ==n:
         
         for t in range(n):
@@ -73,7 +73,7 @@ def TD_nstep(self,n):
         
         else:
             new_action = ACTIONS.index(np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1,0.1]))
-        G = total_reward + gamma**n * self.model[last_state_index, new_action]
+        G = total_reward + np.float(gamma,n) * self.model[last_state_index, new_action]
         
         update_index = feature_index(self, transitions[0,0])
         update_action = ACTIONS.index(transitions[0,1])
@@ -104,9 +104,6 @@ def train_model(self, old_game_state, self_action, events, new_game_state=None):
     if new_game_state is not None:
         TD_nstep(self,N)
    
-
-    
-
 
 def game_events_occurred(
     self,
