@@ -4,26 +4,29 @@ import pickle
 from typing import List
 
 import events as e
-from .callbacks import state_to_features, feature_index, act
+from .callbacks import state_to_features, feature_index, act, add_bomb_path_to_field
 import random as random
 import numpy as np
 import json
+import pandas as pd
+import os
 
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
 STATE_FEATURES = 2
 # parameters
 alpha = 0.01  # learning rate
-gamma = 0.6  # discout factor
+gamma = 0.3  # discout factor
 
 
 # additional events:
-VALID_ACTION = "VALID_ACTION"
 CHASING_COIN = "CHASING_COIN"
 MOVED_TOWARDS_BOMB = "MOVED_TOWARDS_BOMB"
 MOVED_FROM_BOMB = "MOVED_FROM_BOMB"
 GOOD_BOMB_PLACEMENT = "GOOD_BOMB_PLACEMENT"
 BAD_BOMB_PLACEMENT = "BAD_BOMB_PLACEMENT"
+MOVED_IN_DANGER = "MOVED_IN_DANGER"
+MOVED_FROM_DANGER = "MOVED_FROM_DANGER"
 
 
 def create_model(self):
@@ -68,7 +71,7 @@ def train_model(self, old_game_state, self_action, events, new_game_state=None):
 
     # parameters
 
-    reward = reward_from_events(self, events, self_action)
+    reward = reward_from_events(self, events)
 
     # Implementing SARSA method
 
@@ -109,8 +112,13 @@ def game_events_occurred(
         f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}'
     )
 
-    if self_action is None or old_game_state is None or new_game_state is None:
+    if self_action is None or old_game_state is None:
         return
+
+    if new_game_state is None:
+        new_game_state = old_game_state
+
+    events = add_own_events(self, events, self_action, old_game_state, new_game_state)
 
     train_model(self, old_game_state, self_action, events, new_game_state)
 
@@ -128,34 +136,59 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     :param self: The same object that is passed to all of your callbacks.
     """
+
+    events = add_own_events(self, events, last_action, last_game_state, last_game_state)
+    train_model(self, last_game_state, last_action, events, last_game_state)
+
     self.logger.debug(
         f'Encountered event(s) {", ".join(map(repr, events))} in final step'
     )
 
-    train_model(self, last_game_state, last_action, events)
-
+    self.distance_trace = []
     with open("model_dict.json", "w") as fp:
         json.dump(self.feature_dict, fp)
 
     with open("my-saved-model.pt", "wb") as file:
         pickle.dump(self.model, file)
+    save_game_statistic(self, last_game_state)
 
 
-def reward_from_events(self, events: List[str], self_action) -> int:
+def reward_from_events(self, events: List[str]) -> int:
     """
     *This is not a required function, but an idea to structure your code.*
 
     Here you can modify the rewards your agent get so as to en/discourage
     certain behavior.
+
+    Current own Events:
+    CHASING_COIN = "CHASING_COIN"
+    MOVED_TOWARDS_BOMB = "MOVED_TOWARDS_BOMB"
+    MOVED_FROM_BOMB = "MOVED_FROM_BOMB"
+    GOOD_BOMB_PLACEMENT = "GOOD_BOMB_PLACEMENT"
+    BAD_BOMB_PLACEMENT = "BAD_BOMB_PLACEMENT"
+    MOVED_IN_DANGER = "MOVED_IN_DANGER"
+    MOVED_FROM_DANGER = "MOVED_FROM_DANGER"
+
     """
     game_rewards = {
-        e.COIN_COLLECTED: 3,
+        e.COIN_COLLECTED: 15,
         e.KILLED_OPPONENT: 5,
         e.COIN_FOUND: 1,
-        e.WAITED: -2,
-        e.INVALID_ACTION: -10,
+        e.WAITED: -9,
+        e.INVALID_ACTION: -20,
         e.CRATE_DESTROYED: 0.3,
-        e.KILLED_SELF: -15,
+        e.KILLED_SELF: -40,
+        e.MOVED_DOWN: -3,
+        e.MOVED_LEFT: -3,
+        e.MOVED_RIGHT: -3,
+        e.MOVED_UP: -3,
+        CHASING_COIN: 3,
+        MOVED_TOWARDS_BOMB: -5,
+        MOVED_FROM_BOMB: 5,
+        GOOD_BOMB_PLACEMENT: 7,
+        BAD_BOMB_PLACEMENT: -2,
+        MOVED_IN_DANGER: -5,
+        MOVED_FROM_DANGER: 5,
     }
     reward_sum = 0
     reward_events = []
@@ -165,71 +198,95 @@ def reward_from_events(self, events: List[str], self_action) -> int:
             reward_events.append(event)
             reward_sum += game_rewards[event]
 
-    # encurage blowing up crates
-    if self.next_to_box and ACTIONS.index(self_action) == 5:
-        reward_sum += 1
-        reward_events.append("Bomb next to Crate")
-
-    # chek if at an intersection:
-    intersection = 0
-    for i in [7, 11, 13, 17]:
-        if self.surroundings[i] != 1:
-            intersection += 1
-
-    # don't blow up bomb if no creates are nearby
-    if intersection == 4 and ACTIONS.index(self_action) == 5:
-        reward_sum += -1
-        reward_events.append("no crates")
-
-    if self.coin_direction != -1:
-        if ACTIONS.index(self_action) == self.coin_direction:
-            reward_sum += 0.5
-            reward_events.append("moved in direction of coin")
-
-        elif ACTIONS.index(self_action) != self.coin_direction:
-            reward_sum += -0.7
-            reward_events.append("moved not in direction of coin")
-
-    if self.bomb_direction != -1 and not ACTIONS.index(self_action) == 5:
-
-        if ACTIONS.index(self_action) == self.bomb_direction:
-            reward_sum += -4
-            reward_events.append("moved in direction of bomb")
-
-        elif ACTIONS.index(self_action) != self.bomb_direction:
-            reward_sum += 4
-            reward_events.append("moved not in direction of bomb")
-
-    # if self.bool_bomb == False and e.WAITED in events:
-    #     reward_sum -= 3
-
-    # # encurage running towards coin
-    # # if len(self.distance_trace) > 2 and not e.COIN_COLLECTED in events:
-    # #     # the closer the higher the value
-    # #     if self.distance_trace[-2] < self.distance_trace[-1]:
-    # #         reward_sum += 0.6
-    # #         reward_events.append("towards coin")
-
-    # #     elif self.distance_trace[-2] > self.distance_trace[-1]:
-    # #         reward_sum += -0.6
-    # #         reward_events.append("away from coin")
-
-    # # encurage running away from bomb
-    # if len(self.bomb_trace) > 2:
-    #     # the closer the higher the value
-    #     if self.bomb_trace[-2] < self.bomb_trace[-1]:
-    #          reward_sum += -3
-    #          reward_events.append("towards bomb")
-
-    #     elif self.bomb_trace[-2] > self.bomb_trace[-1]:
-    #         reward_sum += 3
-    #         reward_events.append("away from bomb")
-
-    # punish bomb dropping when no bomb available
-    # if e.BOMB_DROPPED in events and not self.bool_bomb:
-    #     reward_sum += -1
-    #     reward_events.append("no bomb available")
-
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(reward_events)}")
     self.logger.info("")
     return reward_sum
+
+
+def add_own_events(self, events, action, old_game_state, new_game_state):
+
+    old_player_coor = old_game_state["self"][3]
+    new_player_coor = new_game_state["self"][3]
+
+    coin_coordinates = old_game_state["coins"]
+    if len(coin_coordinates) != 0:
+        old_coin_distances = np.linalg.norm(
+            np.subtract(coin_coordinates, old_player_coor), axis=1
+        )
+        new_coin_distances = np.linalg.norm(
+            np.subtract(coin_coordinates, new_player_coor), axis=1
+        )
+
+        if min(new_coin_distances) < min(old_coin_distances):
+
+            events.append(CHASING_COIN)
+
+    # reward moving from bomb
+    bombs = old_game_state["bombs"]
+    bomb_coordinates = [(x, y) for ((x, y), t) in bombs]
+
+    if len(bomb_coordinates) != 0:
+        old_bomb_distance = np.linalg.norm(
+            np.subtract(bomb_coordinates, old_player_coor), axis=1
+        )
+        new_bomb_distance = np.linalg.norm(
+            np.subtract(bomb_coordinates, new_player_coor), axis=1
+        )
+
+        if min(new_bomb_distance) < min(old_bomb_distance):
+
+            events.append(MOVED_TOWARDS_BOMB)
+
+        else:
+            events.append(MOVED_FROM_BOMB)
+
+    # penelize standing in danger.
+
+    old_field = add_bomb_path_to_field(
+        old_game_state["bombs"],
+        old_game_state["explosion_map"],
+        old_game_state["field"].T,
+    )
+    new_field = add_bomb_path_to_field(
+        new_game_state["bombs"],
+        new_game_state["explosion_map"],
+        new_game_state["field"].T,
+    )
+
+    if old_field[old_player_coor] == 2 and new_field[new_player_coor] == 0:
+        events.append(MOVED_FROM_DANGER)
+    if old_field[old_player_coor] == 0 and new_field[new_player_coor] == 2:
+        events.append(MOVED_IN_DANGER)
+
+    # bomb next to crate
+    if self.next_to_box and ACTIONS.index(action) == 5:
+        events.append(GOOD_BOMB_PLACEMENT)
+
+    # chek if at an intersection:
+
+    # don't blow up bomb if no creates are nearby
+    if not self.next_to_box and ACTIONS.index(action) == 5:
+        events.append(BAD_BOMB_PLACEMENT)
+
+    return events
+
+
+def save_game_statistic(self, game_state):
+    filename = "learning_stat.csv"
+
+    round = game_state["round"]
+    steps = game_state["step"]
+    _, score, self.bool_bomb, (x, y) = game_state["self"]
+
+    old_count = 0
+    header = True
+    if os.path.exists(filename):
+        header = False
+        df_old = pd.read_csv(filename)
+        old_count = int(df_old["round"].values[-1])
+
+    summary = {"round": [1 + old_count], "steps": [steps], "score": [score]}
+
+    df = pd.DataFrame.from_dict(summary)
+
+    df.to_csv(filename, mode="a", header=header)
