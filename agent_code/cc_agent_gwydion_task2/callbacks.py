@@ -4,7 +4,7 @@ import random
 import json
 from this import d
 import numpy as np
-
+import settings as s
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
 STATE_FEATURES = 2
@@ -96,6 +96,7 @@ def act(self, game_state: dict) -> str:
                     decision[-2] / (decision[-1] + decision[-2]),
                 ],
             )
+            # decision = decision[-1]
 
             self.trace.append(decision)
 
@@ -213,14 +214,35 @@ def find_objects(self, object_coordinates, current_pos, field, return_coords=Fal
 
 
 def add_bomb_path_to_field(bomb_coords, field):
+    def _get_blast_coords(bomb, field):
+        x, y = bomb[0], bomb[1]
+        blast_coords = [(x, y)]
+
+        for i in range(1, s.BOMB_POWER + 1):
+            if field[x + i, y] == -1:
+                break
+            blast_coords.append((x + i, y))
+        for i in range(1, s.BOMB_POWER + 1):
+            if field[x - i, y] == -1:
+                break
+            blast_coords.append((x - i, y))
+        for i in range(1, s.BOMB_POWER + 1):
+            if field[x, y + i] == -1:
+                break
+            blast_coords.append((x, y + i))
+        for i in range(1, s.BOMB_POWER + 1):
+            if field[x, y - i] == -1:
+                break
+            blast_coords.append((x, y - i))
+
+        return blast_coords
 
     if bomb_coords == []:
         return field
-
     for bomb_coord in bomb_coords:
-        if field[bomb_coord] == 0:
-            field[bomb_coord] = 2
-
+        blast_coord = _get_blast_coords(bomb_coord, field)
+        for blast in blast_coord:
+            field[blast] = 2
     return field
 
 
@@ -258,14 +280,18 @@ def state_to_features(self, game_state: dict) -> np.array:
     field = add_bomb_path_to_field(bombs_coordinates, field)
 
     # search for bombs, crates and space in surroundings
-    surroundings = []
-    for x_i in range(-2, 2):
-        for y_i in range(-2, 2):
-            surroundings.append(field[x + x_i, y + y_i])
+    self.surroundings = []
+
+    for x_i in range(-2, 3):
+        for y_i in range(-2, 3):
+            if (x + x_i) < field.shape[0] and (y + y_i) < field.shape[1]:
+                self.surroundings.append(field[x + x_i, y + y_i])
+            else:
+                self.surroundings.append(-1)
 
     # is box adjecant:
     self.next_to_box = 0
-    if 1 in surroundings:
+    if 1 in self.surroundings:
         self.next_to_box = 1
 
     # find coin target
@@ -291,7 +317,7 @@ def state_to_features(self, game_state: dict) -> np.array:
     )
 
     features = np.array(
-        surroundings
+        self.surroundings
         + [
             self.coin_direction,
             self.bomb_direction,

@@ -18,7 +18,6 @@ gamma = 0.6  # discout factor
 
 
 # additional events:
-VALID_ACTION = "VALID_ACTION"
 CHASING_COIN = "CHASING_COIN"
 MOVED_TOWARDS_BOMB = "MOVED_TOWARDS_BOMB"
 MOVED_FROM_BOMB = "MOVED_FROM_BOMB"
@@ -112,6 +111,8 @@ def game_events_occurred(
     if self_action is None or old_game_state is None or new_game_state is None:
         return
 
+    events = add_own_events(self, events, self_action, old_game_state)
+
     train_model(self, old_game_state, self_action, events, new_game_state)
 
 
@@ -147,6 +148,15 @@ def reward_from_events(self, events: List[str], self_action) -> int:
 
     Here you can modify the rewards your agent get so as to en/discourage
     certain behavior.
+
+    Current own Events:
+    CHASING_COIN = "CHASING_COIN"
+    MOVED_TOWARDS_BOMB = "MOVED_TOWARDS_BOMB"
+    MOVED_FROM_BOMB = "MOVED_FROM_BOMB"
+    GOOD_BOMB_PLACEMENT = "GOOD_BOMB_PLACEMENT"
+    BAD_BOMB_PLACEMENT = "BAD_BOMB_PLACEMENT"
+
+
     """
     game_rewards = {
         e.COIN_COLLECTED: 3,
@@ -156,6 +166,15 @@ def reward_from_events(self, events: List[str], self_action) -> int:
         e.INVALID_ACTION: -10,
         e.CRATE_DESTROYED: 0.3,
         e.KILLED_SELF: -15,
+        e.MOVED_DOWN: -1,
+        e.MOVED_LEFT: -1,
+        e.MOVED_RIGHT: -1,
+        e.MOVED_UP: -1,
+        CHASING_COIN: 3,
+        MOVED_TOWARDS_BOMB: -5,
+        MOVED_FROM_BOMB: 5,
+        GOOD_BOMB_PLACEMENT: 2,
+        BAD_BOMB_PLACEMENT: -2,
     }
     reward_sum = 0
     reward_events = []
@@ -165,71 +184,39 @@ def reward_from_events(self, events: List[str], self_action) -> int:
             reward_events.append(event)
             reward_sum += game_rewards[event]
 
-    # encurage blowing up crates
-    if self.next_to_box and ACTIONS.index(self_action) == 5:
-        reward_sum += 1
-        reward_events.append("Bomb next to Crate")
+    self.logger.info(f"Awarded {reward_sum} for events {', '.join(reward_events)}")
+    self.logger.info("")
+    return reward_sum
+
+
+def add_own_events(self, events, action, game_state):
+
+    # bomb next to crate
+    if self.next_to_box and ACTIONS.index(action) == 5:
+        events.append(GOOD_BOMB_PLACEMENT)
 
     # chek if at an intersection:
     intersection = 0
     for i in [7, 11, 13, 17]:
         if self.surroundings[i] != 1:
             intersection += 1
-
     # don't blow up bomb if no creates are nearby
-    if intersection == 4 and ACTIONS.index(self_action) == 5:
-        reward_sum += -1
-        reward_events.append("no crates")
+    if intersection == 4 and ACTIONS.index(action) == 5:
+        events.append(BAD_BOMB_PLACEMENT)
 
-    if self.coin_direction != -1:
-        if ACTIONS.index(self_action) == self.coin_direction:
-            reward_sum += 0.5
-            reward_events.append("moved in direction of coin")
+    if len(self.distance_trace) > 2:
+        self.logger.debug(
+            f"distance trace: {self.distance_trace[-1]}, {self.distance_trace[-2]}"
+        )
 
-        elif ACTIONS.index(self_action) != self.coin_direction:
-            reward_sum += -0.7
-            reward_events.append("moved not in direction of coin")
+        if self.distance_trace[-1] < self.distance_trace[-2]:
+            events.append(CHASING_COIN)
 
-    if self.bomb_direction != -1 and not ACTIONS.index(self_action) == 5:
+    if self.bomb_direction != -1 and not ACTIONS.index(action) == 5:
 
-        if ACTIONS.index(self_action) == self.bomb_direction:
-            reward_sum += -4
-            reward_events.append("moved in direction of bomb")
+        if ACTIONS.index(action) == self.bomb_direction:
+            events.append(MOVED_TOWARDS_BOMB)
 
-        elif ACTIONS.index(self_action) != self.bomb_direction:
-            reward_sum += 4
-            reward_events.append("moved not in direction of bomb")
-
-    # if self.bool_bomb == False and e.WAITED in events:
-    #     reward_sum -= 3
-
-    # # encurage running towards coin
-    # # if len(self.distance_trace) > 2 and not e.COIN_COLLECTED in events:
-    # #     # the closer the higher the value
-    # #     if self.distance_trace[-2] < self.distance_trace[-1]:
-    # #         reward_sum += 0.6
-    # #         reward_events.append("towards coin")
-
-    # #     elif self.distance_trace[-2] > self.distance_trace[-1]:
-    # #         reward_sum += -0.6
-    # #         reward_events.append("away from coin")
-
-    # # encurage running away from bomb
-    # if len(self.bomb_trace) > 2:
-    #     # the closer the higher the value
-    #     if self.bomb_trace[-2] < self.bomb_trace[-1]:
-    #          reward_sum += -3
-    #          reward_events.append("towards bomb")
-
-    #     elif self.bomb_trace[-2] > self.bomb_trace[-1]:
-    #         reward_sum += 3
-    #         reward_events.append("away from bomb")
-
-    # punish bomb dropping when no bomb available
-    # if e.BOMB_DROPPED in events and not self.bool_bomb:
-    #     reward_sum += -1
-    #     reward_events.append("no bomb available")
-
-    self.logger.info(f"Awarded {reward_sum} for events {', '.join(reward_events)}")
-    self.logger.info("")
-    return reward_sum
+        elif ACTIONS.index(action) != self.bomb_direction:
+            events.append(MOVED_FROM_BOMB)
+    return events
