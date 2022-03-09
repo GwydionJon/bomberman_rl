@@ -15,9 +15,9 @@ Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
-STATE_FEATURES = 2
+STATE_FEATURES = 3
 # parameters
-N = 3 #Temporal difference steps
+N = 5 #Temporal difference steps
 alpha = 0.01  # learning rate
 gamma = 0.6  # discout factor
 epsilon = 0.1 # E-greedy method
@@ -54,7 +54,7 @@ def setup_training(self):
     else:
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
-
+    
 
 def TD_nstep(self,n):
     total_reward = 0
@@ -64,7 +64,7 @@ def TD_nstep(self,n):
     
     if len(transitions) ==n:
         
-        for t in range(N):
+        for t in range(n):
             
             total_reward += np.float_power(gamma, t) * float(transitions[t,-1])
             
@@ -73,14 +73,27 @@ def TD_nstep(self,n):
         
         else:
             new_action = ACTIONS.index(np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1,0.1]))
-        G = total_reward + gamma**N * self.model[last_state_index, new_action]
+        G = total_reward + gamma**n * self.model[last_state_index, new_action]
         
-        update_index = feature_index(self, transitions[t,0])
-        update_action = ACTIONS.index(transitions[t,1])
+        update_index = feature_index(self, transitions[0,0])
+        update_action = ACTIONS.index(transitions[0,1])
         
         Q_value = self.model[update_index, update_action] + alpha*(G - self.model[update_index, update_action])
         self.model[update_index, update_action] = Q_value
-
+    else:
+    #Do normal sarsa
+    # Implementing SARSA method
+        new_index = feature_index(self, transitions[-1,2])
+        if np.random.rand() < (1- epsilon):
+            new_action = np.argmax(self.model[new_index])
+        
+        else:
+            new_action = ACTIONS.index(np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1]))
+        old_val = self.model[feature_index(self,transitions[-1,0]), ACTIONS.index(transitions[-1,1])]
+        new_val = old_val + alpha * (
+            float(transitions[-1,-1]) + gamma * self.model[new_index,new_action] - old_val)
+    
+        self.model[feature_index(self,transitions[-1,0]), ACTIONS.index(transitions[-1,1])] = new_val
 
 
 def train_model(self, old_game_state, self_action, events, new_game_state=None):
@@ -163,7 +176,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     #reset history:
     self.transitions = deque(maxlen=N) 
 
-def reward_from_events(self, events: List[str], self_action) -> int:
+def reward_from_events(self, events: List[str], self_action) -> float:
     """
     *This is not a required function, but an idea to structure your code.*
 

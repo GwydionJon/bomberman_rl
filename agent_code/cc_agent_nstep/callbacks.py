@@ -7,7 +7,7 @@ import numpy as np
 import settings as s
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
-STATE_FEATURES = 2
+STATE_FEATURES = 3
 
 
 def setup(self):
