@@ -89,7 +89,7 @@ def make_example_dict(values):
     return reward_dict
 
 
-def run_model(values, value_idx):
+def run_model(values, value_idx, keep_model=False):
 
     reward_dict = make_example_dict(values)
     with open("agent_code/cc_agent_gwydion_Tuning/rewards.json", "w") as fp:
@@ -102,8 +102,9 @@ def run_model(values, value_idx):
     with open("agent_code/cc_agent_gwydion_Tuning/stat.json", "r") as f:
         stats_dict = json.load(f)
 
-    # os.remove("agent_code/cc_agent_gwydion_Tuning/model_dict.json")
-    # os.remove("agent_code/cc_agent_gwydion_Tuning/my-saved-model.pt")
+    if keep_model == False:
+        os.remove("agent_code/cc_agent_gwydion_Tuning/model_dict.json")
+        os.remove("agent_code/cc_agent_gwydion_Tuning/my-saved-model.pt")
 
     return stats_dict[str(list(reward_dict.values()))]
 
@@ -132,38 +133,23 @@ def init_pygad():
 
 def main():
 
-    # ga_instance = init_pygad()
-    # ga_instance.run()
+    ga_instance = init_pygad()
+    ga_instance.run()
 
-    # #test_run = run_model(np.arange(15))
+    solution, solution_fitness, solution_idx = ga_instance.best_solution()
+    print(
+        "Parameters of the best solution : {solution}".format(
+            solution=make_example_dict(solution)
+        )
+    )
+    print(
+        "Fitness value of the best solution = {solution_fitness}".format(
+            solution_fitness=solution_fitness
+        )
+    )
 
-    # solution, solution_fitness, solution_idx = ga_instance.best_solution()
-    # print("Parameters of the best solution : {solution}".format(solution=make_example_dict(solution)))
-    # print("Fitness value of the best solution = {solution_fitness}".format(solution_fitness=solution_fitness))
-
-    solution = [
-        12.868106814929837,
-        59.13289993245976,
-        59.55190778919831,
-        6.5840939230389095,
-        54.95605131095348,
-        6.091471200364805,
-        62.236969513572035,
-        5.161016394931826,
-        1.2407603745344304,
-        25.55570619700454,
-        41.89826735891162,
-        32.50923261654381,
-        3.3619782069834736,
-        4.4775502503016975,
-        13.194939666513676,
-        13.194939666513676,
-        13.194939666513676,
-        13.194939666513676,
-        13.194939666513676,
-    ]
-
-    run_model(solution, 0)
+    # train the best model
+    run_model(solution, 0, keep_model=True)
 
 
 if __name__ == "__main__":
