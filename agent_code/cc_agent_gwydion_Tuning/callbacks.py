@@ -2,9 +2,12 @@ import os
 import pickle
 import random
 import json
-from this import d
+
+# from this import d
 import numpy as np
 import settings as s
+from collections import namedtuple, deque
+
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
 STATE_FEATURES = 2
@@ -27,15 +30,14 @@ def setup(self):
 
     # target stores the current target coin
     self.target = None
-    self.running_circles = 0
 
     # stores the distance to the target
     self.trace = []
-    self.distance_trace = []
-    self.bomb_trace = []
     # to check if the number of coins has changed.
-    self.last_coin_number = 0
-    self.next_to_box = 0
+
+    self.score = deque(maxlen=100)
+    with open("rewards.json", "r") as f:
+        self.reward_dict = json.load(f)
 
     if self.train and not os.path.isfile("my-saved-model.pt"):
         print("First round")
@@ -125,30 +127,34 @@ def act(self, game_state: dict) -> str:
 
 def find_objects(self, object_coordinates, current_pos, field, return_coords=False):
     x, y = current_pos
-    if object_coordinates == []:
+    if not object_coordinates:
         if return_coords:
             return 0, -1, None
         return 0, -1
-    min_distance_ind = np.argmin(
-        np.sum(np.abs(np.asarray(object_coordinates) - np.asarray(current_pos)), axis=1)
-    )
-    object_coord = object_coordinates[min_distance_ind]
+    else:
+        min_distance_ind = np.argmin(
+            np.sum(
+                np.abs(np.asarray(object_coordinates) - np.asarray(current_pos)), axis=1
+            )
+        )
 
-    distance = np.linalg.norm(np.asarray(object_coord) - np.asarray(current_pos))
-    neighbour_tiles = np.array(
-        [
-            [x, y + 1] if field[x, y + 1] == 0 else [1000, 1000],
-            [x + 1, y] if field[x + 1, y] == 0 else [1000, 1000],
-            [x, y - 1] if field[x, y - 1] == 0 else [1000, 1000],
-            [x - 1, y] if field[x - 1, y] == 0 else [1000, 1000],
-        ]
-    )
+        object_coord = object_coordinates[min_distance_ind]
 
-    direction = np.argmin(np.sum(np.abs(neighbour_tiles - object_coord), axis=1))
+        distance = np.linalg.norm(np.asarray(object_coord) - np.asarray(current_pos))
+        neighbour_tiles = np.array(
+            [
+                [x, y + 1] if field[x, y + 1] == 0 else [1000, 1000],
+                [x + 1, y] if field[x + 1, y] == 0 else [1000, 1000],
+                [x, y - 1] if field[x, y - 1] == 0 else [1000, 1000],
+                [x - 1, y] if field[x - 1, y] == 0 else [1000, 1000],
+            ]
+        )
 
-    if return_coords:
-        return distance, direction, object_coord
-    return distance, direction
+        direction = np.argmin(np.sum(np.abs(neighbour_tiles - object_coord), axis=1))
+
+        if return_coords:
+            return distance, direction, object_coord
+        return distance, direction
 
 
 def add_bomb_path_to_field(bombs, explosions, field):
@@ -216,7 +222,7 @@ def state_to_features(self, game_state: dict) -> np.array:
     if game_state is None:
         return None
 
-    _, score, bool_bomb, (x, y) = game_state["self"]
+    _, score, self.bool_bomb, (x, y) = game_state["self"]
     field = game_state["field"].T
     # check in which directions walls are: UP-RIGHT-DOWN-LEFT
 
@@ -230,6 +236,8 @@ def state_to_features(self, game_state: dict) -> np.array:
     for i in range(-2, 3):
         if (x + i) < field.shape[0]:
             self.surroundings.append(field[x + i, y])
+        else:
+            self.surroundings.append(-1)
 
         if (y + i) < field.shape[1]:
             self.surroundings.append(field[x, y + i])
@@ -249,7 +257,6 @@ def state_to_features(self, game_state: dict) -> np.array:
     )
 
     bombs_coordinates = [(x, y) for ((x, y), t) in game_state["bombs"]]
-
     bomb_distance, self.bomb_direction = find_objects(
         self,
         bombs_coordinates,
@@ -270,11 +277,14 @@ def state_to_features(self, game_state: dict) -> np.array:
         ),
         field,
     )
-    if self.coin_direction != -1:
-        features = np.array(self.surroundings + [self.coin_direction, bool_bomb])
-    elif self.coin_direction == -1:
-        features = np.array(self.surroundings + [crate_direction, bool_bomb])
 
+    features = np.array(
+        self.surroundings
+        + [
+            self.coin_direction,
+            crate_direction,
+        ]
+    )
     return str(features)
 
 

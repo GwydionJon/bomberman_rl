@@ -21,9 +21,6 @@ import os
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
 STATE_FEATURES = 2
 # parameters
-alpha = 0.01  # learning rate
-gamma = 0.3  # discout factor
-epsilon = 0.4
 
 
 # additional events:
@@ -38,10 +35,10 @@ CHASING_CRATE = "CHASING_CRATE"
 
 
 def create_model(self):
-    print("create model in train.py")
     q_table = np.zeros(
         (STATE_FEATURES, len(ACTIONS))
     )  # features times number of actions
+
     return q_table
 
 
@@ -82,6 +79,9 @@ def train_model(self, old_game_state, self_action, events, new_game_state=None):
     reward = reward_from_events(self, events)
 
     # Implementing SARSA method
+    epsilon = self.reward_dict["epsilon"]
+    alpha = self.reward_dict["alpha"]  # learning rate
+    gamma = self.reward_dict["gamma"]  # discout factor
 
     old_action_value = self.model[old_index, ACTIONS.index(self_action)]
 
@@ -188,33 +188,11 @@ def reward_from_events(self, events: List[str]) -> int:
     MOVED_FROM_DANGER = "MOVED_FROM_DANGER"
     CHASING_CRATE = "CHASING_CRATE"
     """
-    game_rewards = {
-        "COIN_COLLECTED": 15,
-        e.KILLED_OPPONENT: 5,
-        e.COIN_FOUND: 10,
-        e.WAITED: -15,
-        e.INVALID_ACTION: -60,
-        e.CRATE_DESTROYED: 10,
-        e.KILLED_SELF: -40,
-        e.MOVED_DOWN: -8,
-        e.MOVED_LEFT: -8,
-        e.MOVED_RIGHT: -8,
-        e.MOVED_UP: -8,
-        CHASING_COIN: 9,
-        CHASING_CRATE: 9,
-        MOVED_TOWARDS_BOMB: -5,
-        MOVED_FROM_BOMB: 5,
-        GOOD_BOMB_PLACEMENT: 15,
-        BAD_BOMB_PLACEMENT: -5,
-        MOVED_IN_DANGER: -20,
-        MOVED_FROM_DANGER: 5,
-    }
+    game_rewards = self.reward_dict
     reward_sum = 0
     reward_events = []
 
     for event in events:
-        print(type(event))
-
         if event in game_rewards:
             reward_events.append(event)
             reward_sum += game_rewards[event]
@@ -318,21 +296,37 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
 
 
 def save_game_statistic(self, game_state):
-    filename = "learning_stat.csv"
+    filename = "stat.json"
 
     round = game_state["round"]
     steps = game_state["step"]
     _, score, self.bool_bomb, (x, y) = game_state["self"]
 
-    old_count = 0
-    header = True
+    self.score.append(score)
+
     if os.path.exists(filename):
-        header = False
-        df_old = pd.read_csv(filename)
-        old_count = int(df_old["round"].values[-1])
+        with open(filename, "r") as f:
+            stats_dict = json.load(f)
+    else:
+        stats_dict = {}
 
-    summary = {"round": [1 + old_count], "steps": [steps], "score": [score]}
+    stats_dict.setdefault(str(list(self.reward_dict.values())), np.mean(self.score))
+    stats_dict[str(list(self.reward_dict.values()))] = np.mean(self.score)
 
-    df = pd.DataFrame.from_dict(summary)
+    with open(filename, "w") as fp:
+        json.dump(stats_dict, fp)
 
-    df.to_csv(filename, mode="a", header=header)
+    # old_count = 0
+    # header = True
+    # if os.path.exists(filename):
+    #     header = False
+    #     df_old = pd.read_csv(filename)
+    #     old_count = int(df_old["round"].values[-1])
+
+    # summary = {"round": [1 + old_count], "steps": [steps], "score": [score]}
+
+    # df = pd.DataFrame.from_dict(summary)
+
+    # df.to_csv(filename, mode="a", header=header)
+    # self.test.append(score)
+    # print(self.test)
