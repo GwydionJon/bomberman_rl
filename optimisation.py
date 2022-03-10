@@ -89,6 +89,10 @@ def make_example_dict(values):
     return reward_dict
 
 
+def find_model(values, value_idx):
+    return run_model(values, value_idx)
+
+
 def run_model(values, value_idx, keep_model=False):
 
     reward_dict = make_example_dict(values)
@@ -111,7 +115,7 @@ def run_model(values, value_idx, keep_model=False):
 
 def init_pygad():
 
-    fitness_function = run_model
+    fitness_function = find_model
 
     ga_instance = pygad.GA(
         num_generations=num_generations,
