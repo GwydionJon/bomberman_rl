@@ -190,6 +190,13 @@ def add_bomb_path_to_field(bombs, explosions, field):
     return field
 
 
+def find_crates(self, field, position):
+
+    field_array = np.asarray(field)
+    crate_coords = np.asarray(np.where(field_array == 1)).T
+    return crate_coords
+
+
 def state_to_features(self, game_state: dict) -> np.array:
     """
     *This is not a required function, but an idea to structure your code.*
@@ -229,11 +236,6 @@ def state_to_features(self, game_state: dict) -> np.array:
         else:
             self.surroundings.append(-1)
 
-    # is box adjecant:
-    self.next_to_box = 0
-    if 1 in self.surroundings:
-        self.next_to_box = 1
-
     # find coin target
     coin_distance, self.coin_direction, self.target = find_objects(
         self,
@@ -257,12 +259,23 @@ def state_to_features(self, game_state: dict) -> np.array:
         ),
         field,
     )
+    crate_coords = find_crates(self, field, (x, y))
+
+    crate_distance, crate_direction = find_objects(
+        self,
+        crate_coords,
+        (
+            x,
+            y,
+        ),
+        field,
+    )
 
     features = np.array(
         self.surroundings
         + [
             self.coin_direction,
-            # coin_distance,
+            crate_direction,
         ]
     )
     return str(features)

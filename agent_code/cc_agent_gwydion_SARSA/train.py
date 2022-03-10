@@ -4,7 +4,13 @@ import pickle
 from typing import List
 
 import events as e
-from .callbacks import state_to_features, feature_index, act, add_bomb_path_to_field
+from .callbacks import (
+    state_to_features,
+    feature_index,
+    act,
+    add_bomb_path_to_field,
+    find_crates,
+)
 import random as random
 import numpy as np
 import json
@@ -27,6 +33,7 @@ GOOD_BOMB_PLACEMENT = "GOOD_BOMB_PLACEMENT"
 BAD_BOMB_PLACEMENT = "BAD_BOMB_PLACEMENT"
 MOVED_IN_DANGER = "MOVED_IN_DANGER"
 MOVED_FROM_DANGER = "MOVED_FROM_DANGER"
+CHASING_CRATE = "CHASING_CRATE"
 
 
 def create_model(self):
@@ -74,12 +81,20 @@ def train_model(self, old_game_state, self_action, events, new_game_state=None):
     reward = reward_from_events(self, events)
 
     # Implementing SARSA method
+    epsilon = 0.1
 
     old_action_value = self.model[old_index, ACTIONS.index(self_action)]
 
-    new_action_value = ACTIONS.index(act(self, new_game_state))
+    if np.random.rand() < (1 - epsilon):
+        new_action = np.argmax(self.model[new_index])
+
+    else:
+        new_action = ACTIONS.index(
+            np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1])
+        )
+
     new_val = old_action_value + alpha * (
-        reward + gamma * self.model[new_index, new_action_value] - old_action_value
+        reward + gamma * self.model[new_index, new_action] - old_action_value
     )
 
     self.model[old_index, ACTIONS.index(self_action)] = new_val
@@ -112,8 +127,11 @@ def game_events_occurred(
         f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}'
     )
 
-    if self_action is None or old_game_state is None:
+    if self_action is None:
         return
+
+    if old_game_state is None:
+        old_game_state = new_game_state
 
     if new_game_state is None:
         new_game_state = old_game_state
@@ -168,7 +186,7 @@ def reward_from_events(self, events: List[str]) -> int:
     BAD_BOMB_PLACEMENT = "BAD_BOMB_PLACEMENT"
     MOVED_IN_DANGER = "MOVED_IN_DANGER"
     MOVED_FROM_DANGER = "MOVED_FROM_DANGER"
-
+    CHASING_CRATE = "CHASING_CRATE"
     """
     game_rewards = {
         e.COIN_COLLECTED: 15,
@@ -182,11 +200,12 @@ def reward_from_events(self, events: List[str]) -> int:
         e.MOVED_LEFT: -3,
         e.MOVED_RIGHT: -3,
         e.MOVED_UP: -3,
-        CHASING_COIN: 3,
+        CHASING_COIN: 5,
+        CHASING_CRATE: 3,
         MOVED_TOWARDS_BOMB: -5,
         MOVED_FROM_BOMB: 5,
         GOOD_BOMB_PLACEMENT: 7,
-        BAD_BOMB_PLACEMENT: -2,
+        BAD_BOMB_PLACEMENT: -20,
         MOVED_IN_DANGER: -5,
         MOVED_FROM_DANGER: 5,
     }
@@ -258,14 +277,39 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
     if old_field[old_player_coor] == 0 and new_field[new_player_coor] == 2:
         events.append(MOVED_IN_DANGER)
 
+    # find boxes in nearest vicinty
+
+    # chasing crate
+    crates = find_crates(self, old_field, old_player_coor)
+
+    if len(crates) != 0:
+        old_crate_distances = np.linalg.norm(
+            np.subtract(crates, old_player_coor), axis=1
+        )
+        new_crate_distances = np.linalg.norm(
+            np.subtract(crates, new_player_coor), axis=1
+        )
+
+        if min(new_crate_distances) < min(old_crate_distances):
+
+            events.append(CHASING_CRATE)
+
+    surroundings = []
+    x, y = old_player_coor
+    for i in range(-1, 2):
+        if (x + i) < old_field.shape[0]:
+            surroundings.append(old_field[x + i, y])
+
+        if (y + i) < old_field.shape[1]:
+            surroundings.append(old_field[x, y + i])
+        else:
+            surroundings.append(-1)
     # bomb next to crate
-    if self.next_to_box and ACTIONS.index(action) == 5:
+    if 1 in surroundings and ACTIONS.index(action) == 5:
         events.append(GOOD_BOMB_PLACEMENT)
 
-    # chek if at an intersection:
-
     # don't blow up bomb if no creates are nearby
-    if not self.next_to_box and ACTIONS.index(action) == 5:
+    if 1 not in surroundings and ACTIONS.index(action) == 5:
         events.append(BAD_BOMB_PLACEMENT)
 
     return events
