@@ -78,8 +78,13 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     # best_step = find_coin(self, game_state)
 
+    features = state_to_features(self, game_state)
+    index = feature_index(self, features)
+
     random_prob = 0.25
-    if self.first_training_round is True and random.random() < random_prob:
+    if (
+        self.first_training_round is True and random.random() < random_prob
+    ) or index == -1:
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
 
@@ -89,42 +94,24 @@ def act(self, game_state: dict) -> str:
     else:
         self.logger.debug("Querying model for action.")
 
-        try:
+        decision = np.argsort(
+            self.model[index, :],
+            axis=0,
+        )
 
-            decision = np.argsort(
-                self.model[feature_index(self, state_to_features(self, game_state)), :],
-                axis=0,
+        decision = decision[-1]
+
+        self.trace.append(decision)
+
+        self.logger.debug(
+            "Model Decision: "
+            + str(decision)
+            + " chosen from:"
+            + str(
+                self.model[feature_index(self, state_to_features(self, game_state)), :]
             )
-
-            # decision = np.random.choice(
-            #     [decision[-1], decision[-2]],
-            #     p=[
-            #         decision[-1] / (decision[-1] + decision[-2]),
-            #         decision[-2] / (decision[-1] + decision[-2]),
-            #     ],
-            # )
-            decision = decision[-1]
-
-            self.trace.append(decision)
-
-            self.logger.debug(
-                "Model Decision: "
-                + str(decision)
-                + " chosen from:"
-                + str(
-                    self.model[
-                        feature_index(self, state_to_features(self, game_state)), :
-                    ]
-                )
-            )
-            return ACTIONS[decision]
-
-        except:
-            print("exept")
-            random_action = np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1])
-
-            self.trace.append(ACTIONS.index(random_action))
-            return random_action
+        )
+        return ACTIONS[decision]
 
 
 def find_objects(self, object_coordinates, current_pos, field, return_coords=False):
@@ -363,4 +350,8 @@ def state_to_features(self, game_state: dict) -> np.array:
 
 def feature_index(self, features):
     self.feature_dict.setdefault(features, len(self.feature_dict))
-    return self.feature_dict[features]
+    index = self.feature_dict[features]
+    if index >= len(self.model):
+        print("index not in model.")
+        index = -1
+    return index
