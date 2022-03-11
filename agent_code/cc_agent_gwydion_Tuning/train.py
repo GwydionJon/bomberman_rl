@@ -213,7 +213,7 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
     old_explosion_map = old_game_state["explosion_map"].T
 
     new_coins = np.asarray(new_game_state["coins"]).T
-    old_coins = np.asarray(old_game_state["coins"])
+    old_coins = np.asarray(old_game_state["coins"]).T
 
     old_field = add_bomb_path_to_field(
         old_bombs,

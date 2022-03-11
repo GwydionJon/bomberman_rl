@@ -121,11 +121,17 @@ def find_objects(self, object_coordinates, current_pos, field, return_coords=Fal
             return 0, -1, None
         return 0, -1
     else:
-        min_distance_ind = np.argmin(
-            np.sum(
-                np.abs(np.asarray(object_coordinates) - np.asarray(current_pos)), axis=1
+        try:
+            min_distance_ind = np.argmin(
+                np.sum(
+                    np.abs(np.asarray(object_coordinates) - np.asarray(current_pos)),
+                    axis=1,
+                )
             )
-        )
+        except Exception as e:
+            print(np.asarray(object_coordinates))
+            print(np.asarray(current_pos))
+            raise e
 
         object_coord = object_coordinates[min_distance_ind]
 
