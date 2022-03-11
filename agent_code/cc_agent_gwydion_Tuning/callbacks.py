@@ -81,7 +81,7 @@ def act(self, game_state: dict) -> str:
     features = state_to_features(self, game_state)
     index = feature_index(self, features)
 
-    random_prob = 0.25
+    random_prob = self.reward_dict["epsilon"]
     if (
         self.first_training_round is True and random.random() < random_prob
     ) or index == -1:
@@ -116,7 +116,7 @@ def act(self, game_state: dict) -> str:
 
 def find_objects(self, object_coordinates, current_pos, field, return_coords=False):
     x, y = current_pos
-    if object_coordinates is not False:
+    if len(object_coordinates) == 0:
         if return_coords:
             return 0, -1, None
         return 0, -1

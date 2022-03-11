@@ -33,6 +33,8 @@ BAD_BOMB_PLACEMENT = "BAD_BOMB_PLACEMENT"
 MOVED_IN_DANGER = "MOVED_IN_DANGER"
 MOVED_FROM_DANGER = "MOVED_FROM_DANGER"
 CHASING_CRATE = "CHASING_CRATE"
+CHASING_COIN_INSTEAD_OF_CRATE = "CHASING_COIN_INSTEAD_OF_CRATE"
+CHASING_CRATE_INSTEAD_OF_COIN = "CHASING_CRATE_INSTEAD_OF_COIN"
 
 
 def create_model(self):
@@ -180,14 +182,7 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
 
     Current own Events:
-    CHASING_COIN = "CHASING_COIN"
-    MOVED_TOWARDS_BOMB = "MOVED_TOWARDS_BOMB"
-    MOVED_FROM_BOMB = "MOVED_FROM_BOMB"
-    GOOD_BOMB_PLACEMENT = "GOOD_BOMB_PLACEMENT"
-    BAD_BOMB_PLACEMENT = "BAD_BOMB_PLACEMENT"
-    MOVED_IN_DANGER = "MOVED_IN_DANGER"
-    MOVED_FROM_DANGER = "MOVED_FROM_DANGER"
-    CHASING_CRATE = "CHASING_CRATE"
+
     """
     game_rewards = self.reward_dict
     reward_sum = 0
@@ -241,7 +236,7 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
     new_save_direction, new_save_distance = find_safe_spot(
         self, new_field, (new_player_coor[0], new_player_coor[1])
     )
-
+    # reward chasing coin
     if len(old_coins) != 0:
         old_coin_distances = np.linalg.norm(
             np.subtract(old_coins, old_player_coor), axis=1
@@ -253,6 +248,32 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
         if min(new_coin_distances) < min(old_coin_distances):
 
             events.append(CHASING_COIN)
+
+    # chasing crate
+    crates = find_crates(self, old_field, old_player_coor)
+    if len(crates) != 0:
+        old_crate_distances = np.linalg.norm(
+            np.subtract(crates, old_player_coor), axis=1
+        )
+        new_crate_distances = np.linalg.norm(
+            np.subtract(crates, new_player_coor), axis=1
+        )
+
+        if min(new_crate_distances) < min(old_crate_distances):
+
+            events.append(CHASING_CRATE)
+
+    # reward chasing coin instead of crate
+    if len(old_coins) != 0 and len(crates) != 0:
+        if min(new_crate_distances) >= min(old_crate_distances) and min(
+            new_coin_distances
+        ) < min(old_coin_distances):
+            events.append(CHASING_COIN_INSTEAD_OF_CRATE)
+
+        elif min(new_crate_distances) < min(old_crate_distances) and min(
+            new_coin_distances
+        ) >= min(old_coin_distances):
+            events.append(CHASING_CRATE_INSTEAD_OF_COIN)
 
     # reward moving from bomb
 
@@ -269,7 +290,8 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
             events.append(MOVED_TOWARDS_BOMB)
 
         else:
-            events.append(MOVED_FROM_BOMB)
+            if e.BOMB_EXPLODED not in events:
+                events.append(MOVED_FROM_BOMB)
 
     # penelize standing in danger.
 
@@ -285,20 +307,6 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
         events.append(MOVED_IN_DANGER)
 
     # find boxes in nearest vicinty
-
-    # chasing crate
-    crates = find_crates(self, old_field, old_player_coor)
-    if len(crates) != 0:
-        old_crate_distances = np.linalg.norm(
-            np.subtract(crates, old_player_coor), axis=1
-        )
-        new_crate_distances = np.linalg.norm(
-            np.subtract(crates, new_player_coor), axis=1
-        )
-
-        if min(new_crate_distances) < min(old_crate_distances):
-
-            events.append(CHASING_CRATE)
 
     surroundings = []
     x, y = old_player_coor

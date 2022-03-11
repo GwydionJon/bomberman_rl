@@ -22,18 +22,18 @@ import pygad
 # }
 model_name = "cc_agent_gwydion_tuning"
 
-num_genes = 18  # number of parameters
+num_genes = 20  # number of parameters
 
-num_generations = 20
-num_parents_mating = 5
+num_generations = 10
+num_parents_mating = 4
 
-sol_per_pop = 40  # solutions per generation
+sol_per_pop = 20  # solutions per generation
 
 init_range_low = 0
-init_range_high = 70
+init_range_high = 20
 
 parent_selection_type = "sss"
-keep_parents = 2
+keep_parents = 3
 
 crossover_type = "single_point"
 
@@ -54,6 +54,7 @@ def make_example_dict(values):
         "GOOD_BOMB_PLACEMENT",
         "MOVED_FROM_DANGER",
         "MOVED_FROM_BOMB",
+        "CHASING_COIN_INSTEAD_OF_CRATE",
     ]
 
     for key, value in zip(pos_keys, values[: len(pos_keys)]):
@@ -66,11 +67,19 @@ def make_example_dict(values):
         "MOVED_TOWARDS_BOMB",
         "BAD_BOMB_PLACEMENT",
         "MOVED_IN_DANGER",
+        "CHASING_CRATE_INSTEAD_OF_COIN",
     ]
+
     for key, value in zip(
         neg_keys, values[len(pos_keys) : len(pos_keys) + len(neg_keys)]
     ):
-        reward_dict[key] = -float(value)
+        if key == "KILLED_SELF":
+            reward_dict[key] = -float(value) * 1.5
+        elif key == "INVALID_ACTION":
+            reward_dict[key] = -float(value) * 1.3
+
+        else:
+            reward_dict[key] = -float(value)
 
     movement_keys = [
         "MOVED_DOWN",
