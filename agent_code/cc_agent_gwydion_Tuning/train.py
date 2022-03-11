@@ -10,6 +10,7 @@ from .callbacks import (
     act,
     add_bomb_path_to_field,
     find_crates,
+    find_safe_spot,
 )
 import random as random
 import numpy as np
@@ -207,8 +208,8 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
     old_field = old_game_state["field"].T
     new_field = new_game_state["field"].T
 
-    new_bombs = [((y, x), t) for ((y, x), t) in new_game_state["bombs"]]
-    old_bombs = [((y, x), t) for ((y, x), t) in old_game_state["bombs"]]
+    new_bombs = [((y, x), t) for ((x, y), t) in new_game_state["bombs"]]
+    old_bombs = [((y, x), t) for ((x, y), t) in old_game_state["bombs"]]
 
     new_bomb_coordinates = [(y, x) for ((x, y), t) in new_game_state["bombs"]]
     old_bomb_coordinates = [(y, x) for ((x, y), t) in old_game_state["bombs"]]
@@ -217,7 +218,7 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
     old_explosion_map = old_game_state["explosion_map"].T
 
     new_coins = np.asarray(new_game_state["coins"]).T
-    old_coins = np.asarray(old_game_state["coins"]).T
+    old_coins = np.asarray(old_game_state["coins"])
 
     old_field = add_bomb_path_to_field(
         old_bombs,
@@ -233,6 +234,13 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
     old_player_coor = np.asarray(old_game_state["self"][3]).T
     # old_player_coor[0][1] = old_player_coor[1][0]
     new_player_coor = np.asarray(new_game_state["self"][3]).T
+
+    old_save_direction, old_save_distance = find_safe_spot(
+        self, old_field, (old_player_coor[0], old_player_coor[1])
+    )
+    new_save_direction, new_save_distance = find_safe_spot(
+        self, new_field, (new_player_coor[0], new_player_coor[1])
+    )
 
     if len(old_coins) != 0:
         old_coin_distances = np.linalg.norm(
@@ -265,17 +273,14 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
 
     # penelize standing in danger.
 
-    print(old_field[old_player_coor[0], old_player_coor[1]])
-    print(new_field[new_player_coor])
-
     if (
         old_field[old_player_coor[0], old_player_coor[1]] == 2
-        and new_field[new_player_coor[0], new_player_coor[1]] == 0
+        and new_save_distance < old_save_distance
     ):
         events.append(MOVED_FROM_DANGER)
     if (
         old_field[old_player_coor[0], old_player_coor[1]] == 0
-        and new_field[new_player_coor[0], new_player_coor[1]] == 2
+        and new_save_distance > old_save_distance
     ):
         events.append(MOVED_IN_DANGER)
 
@@ -306,11 +311,11 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
         else:
             surroundings.append(-1)
     # bomb next to crate
-    if 1 in surroundings and ACTIONS.index(action) == 5:
+    if (1 in surroundings and old_save_distance <= 3) and ACTIONS.index(action) == 5:
         events.append(GOOD_BOMB_PLACEMENT)
 
     # don't blow up bomb if no creates are nearby
-    if 1 not in surroundings and ACTIONS.index(action) == 5:
+    if (1 not in surroundings or old_save_distance >= 4) and ACTIONS.index(action) == 5:
         events.append(BAD_BOMB_PLACEMENT)
 
     return events

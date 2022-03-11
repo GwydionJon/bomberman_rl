@@ -7,6 +7,8 @@ import json
 import numpy as np
 import settings as s
 from collections import namedtuple, deque
+from pathfinding.finder.a_star import AStarFinder
+from pathfinding.core.grid import Grid
 
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
@@ -181,7 +183,6 @@ def add_bomb_path_to_field(bombs, explosions, field):
 
         return blast_coords
 
-    # print(explosions)
     bomb_coords = [(x, y) for ((x, y), t) in bombs]
     if bomb_coords == []:
         return field
@@ -197,7 +198,6 @@ def add_bomb_path_to_field(bombs, explosions, field):
 
 
 def find_safe_spot(self, field, position):
-    print(field)
     x, y = position
     close_field = np.zeros((7, 7))
     for i in range(-3, 4):
@@ -208,8 +208,54 @@ def find_safe_spot(self, field, position):
                 close_field[i + 3, j + 3] = -1
             else:
                 close_field[i + 3, j + 3] = field[x + i, y + j]
-    print(close_field)
-    print(np.where(close_field == 0))
+
+    save_field = np.asarray(np.where(close_field == 0))
+
+    best_next_spot = (-1, -1)
+    min_length = 4
+    for safe_spot in save_field.T:
+        next_step, length = pathfinding(close_field, (3, 3), safe_spot)
+        if length < min_length:
+            min_length = length
+            best_next_spot = next_step
+    # 0"UP", 1"RIGHT", 2"DOWN", 3"LEFT"
+    if min_length < 4 and min_length < 1:
+        if best_next_spot == (3, 4):
+            direction = 2
+        elif best_next_spot == (3, 2):
+            direction = 0
+        elif best_next_spot == (2, 3):
+            direction = 3
+        elif best_next_spot == (4, 3):
+            direction = 1
+
+    elif min_length >= 4:
+        direction = -2
+
+    else:
+        direction = -1
+
+    return direction, min_length
+
+
+def pathfinding(field, start, end):
+
+    matrix = field[:, :]
+    matrix = np.where(matrix == 1, -1, matrix)
+    matrix = np.where(matrix == 0, 1, matrix)
+
+    grid = Grid(matrix=matrix)
+    start = grid.node(*start)
+    end = grid.node(end[1], end[0])
+    finder = AStarFinder()
+    path, runs = finder.find_path(start, end, grid)
+    if runs >= 4 or len(path) == 0:
+        return (-1, -1), runs
+    elif runs >= 2 and len(path) != 0:
+        return path[1], runs
+
+    else:
+        return path[0], runs
 
 
 def find_crates(self, field, position):
@@ -245,6 +291,7 @@ def state_to_features(self, game_state: dict) -> np.array:
     bombs = [((y, x), t) for ((x, y), t) in game_state["bombs"]]
     bomb_coordinates = [(y, x) for ((x, y), t) in game_state["bombs"]]
     explosion_map = game_state["explosion_map"].T
+
     coins = np.asarray(game_state["coins"]).T
 
     # check in which directions walls are: UP-RIGHT-DOWN-LEFT
@@ -265,7 +312,7 @@ def state_to_features(self, game_state: dict) -> np.array:
         else:
             self.surroundings.append(-1)
 
-    save_direction = find_safe_spot(self, field, (x, y))
+    save_direction, save_distance = find_safe_spot(self, field, (x, y))
 
     # find coin target
     coin_distance, self.coin_direction, self.target = find_objects(
@@ -307,6 +354,8 @@ def state_to_features(self, game_state: dict) -> np.array:
             self.coin_direction,
             crate_direction,
             self.bool_bomb,
+            save_direction,
+            save_distance,
         ]
     )
     return str(features)
