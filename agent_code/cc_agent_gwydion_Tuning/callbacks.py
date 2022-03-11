@@ -127,7 +127,7 @@ def act(self, game_state: dict) -> str:
 
 def find_objects(self, object_coordinates, current_pos, field, return_coords=False):
     x, y = current_pos
-    if not object_coordinates:
+    if object_coordinates is not False:
         if return_coords:
             return 0, -1, None
         return 0, -1
@@ -196,6 +196,22 @@ def add_bomb_path_to_field(bombs, explosions, field):
     return field
 
 
+def find_safe_spot(self, field, position):
+    print(field)
+    x, y = position
+    close_field = np.zeros((7, 7))
+    for i in range(-3, 4):
+        for j in range(-3, 4):
+            if ((x + i) < 0 or (x + i) >= len(field)) or (
+                (y + j) < 0 or (y + j) >= len(field)
+            ):
+                close_field[i + 3, j + 3] = -1
+            else:
+                close_field[i + 3, j + 3] = field[x + i, y + j]
+    print(close_field)
+    print(np.where(close_field == 0))
+
+
 def find_crates(self, field, position):
 
     field_array = np.asarray(field)
@@ -221,14 +237,19 @@ def state_to_features(self, game_state: dict) -> np.array:
 
     if game_state is None:
         return None
+    # get all coordinates transpoed
+    _, score, self.bool_bomb, position = game_state["self"]
 
-    _, score, self.bool_bomb, (x, y) = game_state["self"]
     field = game_state["field"].T
+    (y, x) = position
+    bombs = [((y, x), t) for ((x, y), t) in game_state["bombs"]]
+    bomb_coordinates = [(y, x) for ((x, y), t) in game_state["bombs"]]
+    explosion_map = game_state["explosion_map"].T
+    coins = np.asarray(game_state["coins"]).T
+
     # check in which directions walls are: UP-RIGHT-DOWN-LEFT
 
-    field = add_bomb_path_to_field(
-        game_state["bombs"], game_state["explosion_map"], field
-    )
+    field = add_bomb_path_to_field(bombs, explosion_map, field)
 
     # search for bombs, crates and space in surroundings
     self.surroundings = []
@@ -244,10 +265,12 @@ def state_to_features(self, game_state: dict) -> np.array:
         else:
             self.surroundings.append(-1)
 
+    save_direction = find_safe_spot(self, field, (x, y))
+
     # find coin target
     coin_distance, self.coin_direction, self.target = find_objects(
         self,
-        game_state["coins"],
+        coins,
         (
             x,
             y,
@@ -256,10 +279,10 @@ def state_to_features(self, game_state: dict) -> np.array:
         return_coords=True,
     )
 
-    bombs_coordinates = [(x, y) for ((x, y), t) in game_state["bombs"]]
+    # bombs_coordinates = [(x, y) for ((x, y), t) in game_state["bombs"]]
     bomb_distance, self.bomb_direction = find_objects(
         self,
-        bombs_coordinates,
+        bomb_coordinates,
         (
             x,
             y,
@@ -283,6 +306,7 @@ def state_to_features(self, game_state: dict) -> np.array:
         + [
             self.coin_direction,
             crate_direction,
+            self.bool_bomb,
         ]
     )
     return str(features)
