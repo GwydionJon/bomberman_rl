@@ -94,10 +94,10 @@ def act(self, game_state: dict) -> str:
     #     return random_action
     if self.train:
         transitions = np.array(self.transitions)
-        #decision = np.argmax(self.model[index, :])
-    if self.train and len(self.transitions) >=3 and transitions[-1,1]==transitions[-3,1]:
-        self.logger.debug("Trying to break repetetive actions.")
-        decision = np.random.choice([0,1,2,3,4,5], p=[0.25, 0.25, 0.25, 0.25, 0, 0])
+        decision = np.argmax(self.model[index, :])
+    #if self.train and len(self.transitions) >=3 and transitions[-1,1]==transitions[-3,1]:
+    #    self.logger.debug("Trying to break repetetive actions.")
+    #    decision = np.random.choice([0,1,2,3,4,5], p=[0.25, 0.25, 0.25, 0.25, 0, 0])
     else:
         self.logger.debug("Querying model for action.")
     
@@ -306,8 +306,12 @@ def state_to_features(self, game_state: dict) -> np.array:
                         1 if (field[a,b-1]==-1 or field[a,b-1]==1) else 0]
 
     field = add_bomb_path_to_field(bombs, explosion_map, field)
-    save_direction, save_distance = find_safe_spot(self, field, (a, b))
-
+    
+    #if agent not at safe spot
+    if field[a,b]==2:    
+        save_direction, save_distance = find_safe_spot(self, field, (a, b))
+    else:
+        save_direction = -2
     # find coin target
     coin_distance, self.coin_direction, self.target = find_objects(
         self,
@@ -341,8 +345,16 @@ def state_to_features(self, game_state: dict) -> np.array:
         ),
         field,
     )
-    
-    if self.coin_direction == -1:
+    if self.bool_bomb == False:
+        features = np.array(
+            surroundings
+            + [
+                -1,
+                self.bool_bomb,
+                save_direction,
+            ]
+        )
+    elif self.coin_direction == -1:
         features = np.array(
             surroundings
             + [
