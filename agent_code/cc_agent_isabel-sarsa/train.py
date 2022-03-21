@@ -20,14 +20,15 @@ import os
 
 
 # Transition cache
-Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
+Transition = namedtuple('Transition',
+                        ('state', 'action', 'next_state', 'reward'))
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
 STATE_FEATURES = 2
 # parameters
-epsilon = 0.3
-alpha = 0.1  # learning rate
-gamma = 0.2  # discout factor
+epsilon = 0.1
+alpha = 0.01 # learning rate
+gamma = 0.2 # discout factor
 N = 10
 
 # additional events:
@@ -42,11 +43,11 @@ CHASING_CRATE = "CHASING_CRATE"
 CHASING_COIN_INSTEAD_OF_CRATE = "CHASING_COIN_INSTEAD_OF_CRATE"
 CHASING_CRATE_INSTEAD_OF_COIN = "CHASING_CRATE_INSTEAD_OF_COIN"
 SAME_ACTIONS = "SAME_ACTIONS"
-WAIT_AT_BOMB_POSITION = "WAIT_AT_BOMB_POSITION"
+WAIT_AT_BOMB_POSITION= "WAIT_AT_BOMB_POSITION"
 
 
 def create_model(self):
-    # q_table = np.random.randint(1,10,size=(STATE_FEATURES, len(ACTIONS)))  # features times number of actions
+    #q_table = np.random.randint(1,10,size=(STATE_FEATURES, len(ACTIONS)))  # features times number of actions
     with open("starting_model.pt", "rb") as file:
         q_table = pickle.load(file)
     print(q_table)
@@ -63,6 +64,7 @@ def setup_training(self):
     """
     # (s, a, r, s')
     self.transitions = deque(maxlen=N)
+
     if self.first_training_round is True:
         self.model = create_model(self)  # =q_table
     else:
@@ -71,63 +73,28 @@ def setup_training(self):
 
 
 def TD_nstep(self, n):
-    total_reward = 0
+    
     transitions = np.array(self.transitions)
+    
+    # Do normal sarsa
+    # Implementing SARSA method
+    new_index = feature_index(self, transitions[-1,2])
+    if np.random.rand() < (1- epsilon):
+        new_action = np.argmax(self.model[new_index])
 
-    last_state_index = feature_index(self, transitions[-1, 2])
-    # do n-step sarsa (Number n defined)
-    if len(transitions) == n:
-        for t in range(n):
-            total_reward += np.float_power(gamma, t) * float(transitions[t, -1])
-
-        if np.random.rand() < (1 - epsilon):
-            new_action = np.argmax(self.model[last_state_index])
-        else:
-            new_action = ACTIONS.index(
-                np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1])
-            )
-
-        G = (
-            total_reward
-            + np.float_power(gamma, n) * self.model[last_state_index, new_action]
-        )
-
-        update_index = feature_index(self, transitions[0, 0])
-        update_action = ACTIONS.index(transitions[0, 1])
-
-        Q_value = self.model[update_index, update_action] + alpha * (
-            G - self.model[update_index, update_action]
-        )
-        self.model[update_index, update_action] = Q_value
     else:
-        # Do normal sarsa
-        # Implementing SARSA method
-        new_index = feature_index(self, transitions[-1, 2])
-        if np.random.rand() < (1 - epsilon):
-            new_action = np.argmax(self.model[new_index])
-
-        else:
-            new_action = ACTIONS.index(
-                np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1])
-            )
-        old_val = self.model[
-            feature_index(self, transitions[-1, 0]), ACTIONS.index(transitions[-1, 1])
-        ]
-        new_val = old_val + alpha * (
-            float(transitions[-1, -1])
-            + gamma * self.model[new_index, new_action]
-            - old_val
-        )
-
-        self.model[
-            feature_index(self, transitions[-1, 0]), ACTIONS.index(transitions[-1, 1])
-        ] = new_val
-
-
+        new_action = ACTIONS.index(np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1]))
+    old_val = self.model[feature_index(self,transitions[-1,0]), ACTIONS.index(transitions[-1,1])]
+    #print(transitions[-1,-1])
+    new_val = old_val + alpha * (float(transitions[-1,-1]) + gamma * self.model[new_index,new_action] - old_val)
+    #print(new_val)
+    self.model[feature_index(self,transitions[-1,0]), ACTIONS.index(transitions[-1,1])] = new_val
+ 
 def train_model(self, old_game_state, self_action, events, new_game_state=None):
-
-    if new_game_state is not None:
-        TD_nstep(self, N)
+    
+   if new_game_state is not None:
+        TD_nstep(self,N)
+    
 
 
 def game_events_occurred(
@@ -167,17 +134,11 @@ def game_events_occurred(
         new_game_state = old_game_state
 
     events = add_own_events(self, events, self_action, old_game_state, new_game_state)
-
-    self.transitions.append(
-        Transition(
-            state_to_features(self, old_game_state),
-            self_action,
-            state_to_features(self, new_game_state),
-            reward_from_events(self, events),
-        )
-    )
-
+    
+    self.transitions.append(Transition(state_to_features(self,old_game_state), self_action, state_to_features(self,new_game_state), reward_from_events(self, events)))
+    
     train_model(self, old_game_state, self_action, events, new_game_state)
+   
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -195,30 +156,23 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     """
 
     events = add_own_events(self, events, last_action, last_game_state, last_game_state)
-    self.transitions.append(
-        Transition(
-            state_to_features(self, last_game_state),
-            last_action,
-            None,
-            reward_from_events(self, events),
-        )
-    )
+    self.transitions.append(Transition(state_to_features(self,last_game_state), last_action, None, reward_from_events(self, events)))
     train_model(self, last_game_state, last_action, events)
+
 
     self.logger.debug(
         f'Encountered event(s) {", ".join(map(repr, events))} in final step'
     )
 
     self.distance_trace = []
-    # with open("model_dict.json", "wb") as fp:
+    #with open("model_dict.json", "wb") as fp:
     #    json.dump(self.feature_dict, fp)
-    np.savetxt("model_new.csv", self.model, fmt="%s", delimiter=",")
-
+    np.savetxt("model_new.csv", self.model,fmt='%s', delimiter=",")
+    
     with open("my-saved-model.pt", "wb") as file:
         pickle.dump(self.model, file)
     save_game_statistic(self, last_game_state)
     self.transitions = deque(maxlen=N)
-
 
 def reward_from_events(self, events: List[str]) -> int:
     """
@@ -249,10 +203,10 @@ def reward_from_events(self, events: List[str]) -> int:
         e.INVALID_ACTION: -50,
         e.CRATE_DESTROYED: 10,
         e.KILLED_SELF: -40,
-        e.MOVED_DOWN: 10,
-        e.MOVED_LEFT: 10,
-        e.MOVED_RIGHT: 10,
-        e.MOVED_UP: 10,
+        e.MOVED_DOWN: 0,
+        e.MOVED_LEFT: 0,
+        e.MOVED_RIGHT: 0,
+        e.MOVED_UP: 0,
         e.SURVIVED_ROUND: 10,
         CHASING_COIN: 9,
         CHASING_CRATE: 9,
@@ -269,7 +223,7 @@ def reward_from_events(self, events: List[str]) -> int:
     }
     reward_sum = 0
     reward_events = []
-
+   
     for event in events:
         if event in game_rewards:
             reward_events.append(event)
@@ -294,8 +248,8 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
     new_explosion_map = new_game_state["explosion_map"].T
     old_explosion_map = old_game_state["explosion_map"].T
 
-    new_coins = [(y, x) for (x, y) in new_game_state["coins"]]
-    old_coins = [(y, x) for (x, y) in old_game_state["coins"]]
+    new_coins = [(y,x) for (x,y) in new_game_state["coins"]]
+    old_coins = [(y,x) for (x,y) in old_game_state["coins"]]
 
     old_field = add_bomb_path_to_field(
         old_bombs,
@@ -308,9 +262,9 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
         new_field,
     )
 
-    old_y, old_x = np.asarray(old_game_state["self"][3])
+    old_x, old_y = np.asarray(old_game_state["self"][3])
     # old_player_coor[0][1] = old_player_coor[1][0]
-    new_y, new_x = np.asarray(new_game_state["self"][3])
+    new_x, new_y = np.asarray(new_game_state["self"][3])
 
     old_save_direction, old_save_distance = find_safe_spot(
         self, old_field, (old_x, old_y)
@@ -321,7 +275,7 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
     # reward chasing coin
     if len(old_coins) != 0:
         old_coin_distances = np.linalg.norm(
-            np.subtract(old_coins, (old_x, old_y)), axis=1
+            np.subtract(old_coins, (old_x,old_y)), axis=1
         )
         new_coin_distances = np.linalg.norm(
             np.subtract(old_coins, (new_x, new_y)), axis=1
@@ -371,15 +325,12 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
 
             events.append(MOVED_TOWARDS_BOMB)
 
-        elif (
-            min(new_bomb_distance) > min(old_bomb_distance)
-            and ACTIONS.index(action) != 4
-        ):
+        elif min(new_bomb_distance) > min(old_bomb_distance) and ACTIONS.index(action) != 4:
             if e.BOMB_EXPLODED not in events:
                 events.append(MOVED_FROM_BOMB)
 
     # penelize standing in danger.
-
+ 
     # if (old_field[old_x, old_y] == 2 and new_save_distance < old_save_distance
     # ):
     #     events.append(MOVED_FROM_DANGER)
@@ -409,12 +360,16 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
     # don't blow up bomb if no creates are nearby
     if (1 not in surroundings or old_save_distance >= 4) and ACTIONS.index(action) == 5:
         events.append(BAD_BOMB_PLACEMENT)
-
-    # Penalize to wait at dropped bomb position:
-    if old_field[old_x, old_y] == 2 and ACTIONS.index(action) == 4:
+    
+    #Penalize to wait after dropped bomb:
+    if len(transitions)>2:
+        if ACTIONS.index(transitions[-2,1])==5 and ACTIONS.index(action)==4:
+            events.append(WAIT_AT_BOMB_POSITION)
+        
+    elif old_field[old_x, old_y] == 2 and ACTIONS.index(action)==4:
         events.append(WAIT_AT_BOMB_POSITION)
-
-    # #Penalize repeating actions
+    
+    #Penalize repeating actions
     # if len(transitions)>=3:
     #     action1 = transitions[-1,1]
     #     action2 = transitions[-3,1]
@@ -426,7 +381,7 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
 def save_game_statistic(self, game_state):
     filename = "learning_stat.csv"
 
-    # round = game_state["round"]
+    #round = game_state["round"]
     steps = game_state["step"]
     _, score, self.bool_bomb, (x, y) = game_state["self"]
 

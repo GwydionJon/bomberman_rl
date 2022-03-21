@@ -11,8 +11,9 @@ from pathfinding.finder.a_star import AStarFinder
 from pathfinding.core.grid import Grid
 
 
+
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
-# STATE_FEATURES = 2
+#STATE_FEATURES = 2
 
 
 def setup(self):
@@ -38,23 +39,23 @@ def setup(self):
     # to check if the number of coins has changed.
 
     self.score = deque(maxlen=100)
-    # with open("rewards.json", "r") as f:
+    #with open("rewards.json", "r") as f:
     #    self.reward_dict = json.load(f)
     with open("feature_dict.json", "r") as f:
         self.feature_dict = json.load(f)
-
+        
     if self.train and not os.path.isfile("my-saved-model.pt"):
         print("First round")
         self.logger.info("Setting up model from scratch.")
         self.first_training_round = True
-        # self.feature_dict = {}
+        #self.feature_dict = {}
     elif self.train and os.path.isfile("my-saved-model.pt"):
         print("Second round")
         self.logger.info("Loading model from saved state.")
         self.first_training_round = False
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
-        # with open("model_dict.json", "r") as f:
+        #with open("model_dict.json", "r") as f:
         #    self.feature_dict = json.load(f)
     else:
         self.first_training_round = False
@@ -62,8 +63,8 @@ def setup(self):
 
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
-
-        # [self.logger.info(str(row)) for row in self.model]
+        
+        #[self.logger.info(str(row)) for row in self.model]
 
 
 def act(self, game_state: dict) -> str:
@@ -93,28 +94,27 @@ def act(self, game_state: dict) -> str:
     #     return random_action
     if self.train:
         transitions = np.array(self.transitions)
-        # decision = np.argmax(self.model[index, :])
-    if (
-        self.train
-        and len(self.transitions) >= 3
-        and transitions[-1, 1] == transitions[-3, 1]
-    ):
+        #decision = np.argmax(self.model[index, :])
+    if self.train and len(self.transitions) >=3 and transitions[-1,1]==transitions[-3,1]:
         self.logger.debug("Trying to break repetetive actions.")
-        decision = np.random.choice(
-            [0, 1, 2, 3, 4, 5], p=[0.25, 0.25, 0.25, 0.25, 0, 0]
-        )
+        decision = np.random.choice([0,1,2,3,4,5], p=[0.25, 0.25, 0.25, 0.25, 0, 0])
     else:
         self.logger.debug("Querying model for action.")
-
+    
         decision = np.argmax(self.model[index, :])
 
-        # decision = decisions[-1]
-        # self.trace.append(decision)
-        # (ACTIONS[decision])
+        #decision = decisions[-1]
+        #self.trace.append(decision)
+        #print(ACTIONS[decision])
     self.logger.debug(
-        "Model Decision: " + str(decision) + " chosen from:" + str(self.model[index])
-    )
-
+            "Model Decision: "
+            + str(decision)
+            + " chosen from:"
+            + str(
+                self.model[index]
+            )
+        )
+        
     return ACTIONS[decision]
 
 
@@ -142,13 +142,12 @@ def find_objects(self, object_coordinates, current_pos, field, return_coords=Fal
         distance = np.linalg.norm(np.asarray(object_coord) - np.asarray(current_pos))
         neighbour_tiles = np.array(
             [
-                [x - 1, y] if field[x - 1, y] == 0 else [1000, 1000],
-                [x, y + 1] if field[x, y + 1] == 0 else [1000, 1000],
-                [x + 1, y + 1] if field[x + 1, y] == 0 else [1000, 1000],
-                [x, y - 1] if field[x, y - 1] == 0 else [1000, 1000],
+                [x-1, y] if field[x-1, y] == 0 else [1000, 1000],
+                [x, y+1] if field[x, y+1] == 0 else [1000, 1000],
+                [x+1, y + 1] if field[x+1, y] == 0 else [1000, 1000],
+                [x, y-1] if field[x, y-1] == 0 else [1000, 1000],
             ]
         )
-
         direction = np.argmin(np.sum(np.abs(neighbour_tiles - object_coord), axis=1))
 
         if return_coords:
@@ -285,25 +284,24 @@ def state_to_features(self, game_state: dict) -> np.array:
     _, score, self.bool_bomb, position = game_state["self"]
     field = game_state["field"].T
 
-    (b, a) = position
+    (b,a) = position
     bombs = [((y, x), t) for ((x, y), t) in game_state["bombs"]]
-
+    
     bomb_coordinates = [(y, x) for ((x, y), t) in game_state["bombs"]]
     explosion_map = game_state["explosion_map"].T
-
-    coins = [(y, x) for (x, y) in game_state["coins"]]
+ 
+    coins = [(y,x) for (x,y) in game_state["coins"]]
 
     # check in which directions walls are: UP-RIGHT-DOWN-LEFT
 
+    
+
     # search for bombs, crates and space in surroundings
-    field[a, b] = 30
-    # print(field)
-    surroundings = [
-        1 if (field[a - 1, b] == -1 or field[a - 1, b] == 1) else 0,
-        1 if (field[a, b + 1] == -1 or field[a, b + 1] == 1) else 0,
-        1 if (field[a + 1, b] == -1 or field[a + 1, b] == 1) else 0,
-        1 if (field[a, b - 1] == -1 or field[a, b - 1] == 1) else 0,
-    ]
+    #print(position)
+    self.surroundings =[1 if field[a,b-1]==-1 or field[a,b-1]==1 else 0,
+                        1 if field[a+1,b]==-1 or field[a+1,b]==1 else 0, 
+                        1 if field[a,b+1]==-1 or field[a,b+1]==1 else 0,
+                        1 if field[a-1,b]==-1 or field[a-1,b]==1 else 0]
 
     field = add_bomb_path_to_field(bombs, explosion_map, field)
     save_direction, save_distance = find_safe_spot(self, field, (a, b))
@@ -341,10 +339,10 @@ def state_to_features(self, game_state: dict) -> np.array:
         ),
         field,
     )
-
+    
     if self.coin_direction == -1:
         features = np.array(
-            surroundings
+            self.surroundings
             + [
                 crate_direction,
                 self.bool_bomb,
@@ -353,14 +351,13 @@ def state_to_features(self, game_state: dict) -> np.array:
         )
     else:
         features = np.array(
-            surroundings
+            self.surroundings
             + [
                 self.coin_direction,
                 self.bool_bomb,
                 save_direction,
             ]
         )
-    self.logger.info(str(features))
     return str(features)
 
 
