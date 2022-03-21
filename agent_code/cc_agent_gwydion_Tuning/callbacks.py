@@ -9,7 +9,7 @@ import settings as s
 from collections import namedtuple, deque
 from pathfinding.finder.a_star import AStarFinder
 from pathfinding.core.grid import Grid
-
+import copy
 
 ACTIONS = ["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"]
 STATE_FEATURES = 2
@@ -128,12 +128,26 @@ def find_objects(self, object_coordinates, current_pos, field, return_coords=Fal
                     axis=1,
                 )
             )
-        except Exception as e:
-            print(np.asarray(object_coordinates))
-            print(np.asarray(current_pos))
-            raise e
+        except:
+            try:
+                object_coordinates = np.asarray(object_coordinates).T
+                min_distance_ind = np.argmin(
+                    np.sum(
+                        np.abs(object_coordinates - np.asarray(current_pos)),
+                        axis=1,
+                    )
+                )
+            except Exception as e:
+                print(np.asarray(object_coordinates))
+                print(np.asarray(current_pos))
+                raise e
+        try:
+            object_coord = object_coordinates[min_distance_ind]
 
-        object_coord = object_coordinates[min_distance_ind]
+        except Exception as e:
+            print(object_coordinates)
+            print(min_distance_ind)
+            raise e
 
         distance = np.linalg.norm(np.asarray(object_coord) - np.asarray(current_pos))
         neighbour_tiles = np.array(
@@ -277,6 +291,8 @@ def state_to_features(self, game_state: dict) -> np.array:
     if game_state is None:
         return None
     # get all coordinates transpoed
+
+    game_state = game_state.copy()
     _, score, self.bool_bomb, position = game_state["self"]
 
     field = game_state["field"].T

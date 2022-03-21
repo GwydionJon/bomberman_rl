@@ -238,12 +238,23 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
     )
     # reward chasing coin
     if len(old_coins) != 0:
-        old_coin_distances = np.linalg.norm(
-            np.subtract(old_coins, old_player_coor), axis=1
-        )
-        new_coin_distances = np.linalg.norm(
-            np.subtract(old_coins, new_player_coor), axis=1
-        )
+        try:
+            old_coin_distances = np.linalg.norm(
+                np.subtract(old_coins, old_player_coor), axis=1
+            )
+        except Exception as e:
+            old_coin_distances = np.linalg.norm(
+                np.subtract(np.asarray(old_coins).T, old_player_coor), axis=1
+            )
+        try:
+            new_coin_distances = np.linalg.norm(
+                np.subtract(np.asarray(old_coins).T, new_player_coor), axis=1
+            )
+
+        except Exception as e:
+            print(old_coins)
+            print(new_player_coor)
+            raise e
 
         if min(new_coin_distances) < min(old_coin_distances):
 
@@ -290,7 +301,7 @@ def add_own_events(self, events, action, old_game_state, new_game_state):
             events.append(MOVED_TOWARDS_BOMB)
 
         else:
-            if e.BOMB_EXPLODED not in events:
+            if "BOMB_EXPLODED" not in events:
                 events.append(MOVED_FROM_BOMB)
 
     # penelize standing in danger.
@@ -352,15 +363,13 @@ def save_game_statistic(self, game_state):
 
     # old_count = 0
     # header = True
-    # if os.path.exists(filename):
+    # if os.path.exists("train_result.csv"):
     #     header = False
-    #     df_old = pd.read_csv(filename)
+    #     df_old = pd.read_csv("train_result.csv")
     #     old_count = int(df_old["round"].values[-1])
 
     # summary = {"round": [1 + old_count], "steps": [steps], "score": [score]}
 
     # df = pd.DataFrame.from_dict(summary)
 
-    # df.to_csv(filename, mode="a", header=header)
-    # self.test.append(score)
-    # print(self.test)
+    # df.to_csv("train_result.csv", mode="a", header=header)
