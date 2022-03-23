@@ -63,6 +63,7 @@ def setup_training(self):
     """
     # (s, a, r, s')
     self.transitions = deque(maxlen=N)
+
     if self.first_training_round is True:
         self.model = create_model(self)  # =q_table
     else:
