@@ -26,7 +26,34 @@ def create_table_v1(feature_dict):
     N = len(feature_dict)
     M = 6 # Number of actions
     table = np.random.randint(1,20,(N,M))
-    
+    for i in range(-1,2):
+        for j in range(-1,2):
+            for k in range(-1,2):
+                for l in range(-1,2):
+                    for m in range(-1,4):
+                        for o in range(-2,4):
+                            #walking in the safe direction
+                            safe1 = feature_dict[str(np.array([i,j,k,l,m,0,0]))]
+                            safe2 = feature_dict[str(np.array([i,j,k,l,m,0,1]))]
+                            safe3 = feature_dict[str(np.array([i,j,k,l,m,0,2]))]
+                            safe4 = feature_dict[str(np.array([i,j,k,l,m,0,3]))]
+                            
+                            table[safe1,0]= 100
+                            table[safe2,1]= 100
+                            table[safe3,2]= 100
+                            table[safe4,3]= 100
+            
+                            #coin direction encouraged
+                            coin1 = feature_dict[str(np.array([i,j,k,l,0,1,o]))]
+                            coin2 = feature_dict[str(np.array([i,j,k,l,1,1,o]))]
+                            coin3 = feature_dict[str(np.array([i,j,k,l,2,1,o]))]
+                            coin4 = feature_dict[str(np.array([i,j,k,l,3,1,o]))]
+                            
+                            table[coin1,0]= 130
+                            table[coin2,1]= 130
+                            table[coin3,2]= 130
+                            table[coin4,3]= 130
+
     for m in range(-1,4):
         for n in range(2):
             for o in range(-2,4):
@@ -99,38 +126,7 @@ def create_table_v1(feature_dict):
                                 table[three_open1,0] = -100
                                 table[three_open2,1] = -100
                                 table[three_open3,2] = -100
-                                table[three_open4,3] = -100
-                                
-                
-                
-    for i in range(-1,2):
-        for j in range(-1,2):
-            for k in range(-1,2):
-                for l in range(-1,2):
-                    for m in range(-1,4):
-                        for o in range(-2,4):
-                            #walking in the safe direction
-                            safe1 = feature_dict[str(np.array([i,j,k,l,m,0,0]))]
-                            safe2 = feature_dict[str(np.array([i,j,k,l,m,0,1]))]
-                            safe3 = feature_dict[str(np.array([i,j,k,l,m,0,2]))]
-                            safe4 = feature_dict[str(np.array([i,j,k,l,m,0,3]))]
-                            
-                            table[safe1,0]= 100
-                            table[safe2,1]= 100
-                            table[safe3,2]= 100
-                            table[safe4,3]= 100
-            
-                            #coin direction encouraged
-                            coin1 = feature_dict[str(np.array([i,j,k,l,0,1,o]))]
-                            coin2 = feature_dict[str(np.array([i,j,k,l,1,1,o]))]
-                            coin3 = feature_dict[str(np.array([i,j,k,l,2,1,o]))]
-                            coin4 = feature_dict[str(np.array([i,j,k,l,3,1,o]))]
-                            
-                            table[coin1,0]= 130
-                            table[coin2,1]= 130
-                            table[coin3,2]= 130
-                            table[coin4,3]= 130
-                              
+                                table[three_open4,3] = -100                
     return table
 
 def create_table(feature_dict):

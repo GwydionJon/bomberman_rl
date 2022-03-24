@@ -345,7 +345,7 @@ def state_to_features(self, game_state: dict) -> np.array:
         ),
         field,
     )
-    if self.bool_bomb == False:
+    if self.bool_bomb == False or -1 in surroundings:
         features = np.array(
             surroundings
             + [
