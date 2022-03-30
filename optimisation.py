@@ -24,16 +24,16 @@ model_name = "cc_agent_gwydion_tuning"
 
 num_genes = 20  # number of parameters
 
-num_generations = 5
-num_parents_mating = 2
+num_generations = 15
+num_parents_mating = 4
 
-sol_per_pop = 4  # solutions per generation
+sol_per_pop = 15  # solutions per generation
 
 init_range_low = 0
 init_range_high = 20
 
 parent_selection_type = "sss"
-keep_parents = 1
+keep_parents = 3
 
 crossover_type = "single_point"
 
@@ -109,7 +109,7 @@ def run_model(values, value_idx, keep_model=False):
         json.dump(reward_dict, fp)
 
     os.system(
-        "python main.py play --agent cc_agent_gwydion_Tuning --scenario coin-heaven --train 1 --no-gui --n-rounds 600"
+        "python main.py play --agent cc_agent_gwydion_Tuning --train 1 --no-gui --n-rounds 1000"
     )
 
     with open("agent_code/cc_agent_gwydion_Tuning/stat.json", "r") as f:
@@ -120,10 +120,6 @@ def run_model(values, value_idx, keep_model=False):
         os.remove("agent_code/cc_agent_gwydion_Tuning/my-saved-model.pt")
 
     return stats_dict[str(list(reward_dict.values()))]
-
-
-def print_generation(gen):
-    print(gen.best_solution())
 
 
 def init_pygad():
@@ -143,8 +139,6 @@ def init_pygad():
         crossover_type=crossover_type,
         mutation_type=mutation_type,
         mutation_percent_genes=mutation_percent_genes,
-        save_solutions=True,
-        on_generation=print_generation,
     )
 
     return ga_instance
@@ -167,12 +161,9 @@ def main():
         )
     )
 
-    filename = "agent_code/cc_agent_gwydion_Tuning/genetic"
-    ga_instance.save(filename=filename)
-    ga_instance.plot_fitness()
-
     # train the best model
     run_model(solution, 0, keep_model=True)
+    ga_instance.plot_fitness()
 
 
 if __name__ == "__main__":
